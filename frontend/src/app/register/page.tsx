@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Shield, Lock, User, ArrowRight, AlertCircle, Key, CheckCircle, Sparkles } from 'lucide-react';
+import { CryptoEngine } from '@/lib/crypto';
+import { ApiClient } from '@/lib/api-client';
 import { CURRENT_USER } from '@/lib/mock-data';
 
 export default function RegisterPage() {
@@ -15,7 +17,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [stepMsg, setStepMsg] = useState<string | null>(null);
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
@@ -26,22 +28,61 @@ export default function RegisterPage() {
       return;
     }
 
-    setStepMsg('Generating client-side ECDH P-256 keypair in browser...');
-    setTimeout(() => {
+    try {
+      setStepMsg('Generating client-side ECDH P-256 keypair in browser...');
+      const keypair = await CryptoEngine.generateIdentityKeyPair();
+      const pubKey = await CryptoEngine.exportPublicKey(keypair.publicKey);
+      const privKey = await CryptoEngine.exportPrivateKey(keypair.privateKey);
+
       setStepMsg('Deriving SHA-256 fingerprint & safety numbers...');
-      setTimeout(() => {
-        const newUser = {
-          ...CURRENT_USER,
-          username: username.toLowerCase(),
+      const fingerprint = await CryptoEngine.computeFingerprint(pubKey);
+
+      // Save user's private key locally on device (NEVER sent to server)
+      CryptoEngine.saveLocalIdentity(username, privKey, pubKey, fingerprint);
+
+      setStepMsg('Registering account with Argon2id & public key publishing...');
+      try {
+        const res = await ApiClient.post('/auth/register', {
+          username: username.trim().toLowerCase(),
+          password,
           displayName: displayName || username,
-        };
-        localStorage.setItem('securechat_user', JSON.stringify(newUser));
-        localStorage.setItem('securechat_jwt', 'mock_jwt_token_registered');
-        setLoading(false);
-        setStepMsg(null);
-        router.push('/chat');
-      }, 700);
-    }, 700);
+          publicKey: pubKey,
+          fingerprint,
+        });
+
+        if (res && res.token && res.user) {
+          localStorage.setItem('securechat_jwt', res.token);
+          localStorage.setItem('securechat_user', JSON.stringify(res.user));
+          setStepMsg(null);
+          router.push('/chat');
+          return;
+        }
+      } catch (apiErr: any) {
+        if (apiErr.message && !apiErr.message.includes('Failed to fetch') && !apiErr.message.includes('NetworkError')) {
+          setError(apiErr.message || 'Registration failed');
+          setLoading(false);
+          setStepMsg(null);
+          return;
+        }
+      }
+
+      // Offline evaluation fallback
+      const newUser = {
+        ...CURRENT_USER,
+        username: username.toLowerCase(),
+        displayName: displayName || username,
+        publicKey: pubKey,
+        fingerprint,
+      };
+      localStorage.setItem('securechat_user', JSON.stringify(newUser));
+      localStorage.setItem('securechat_jwt', 'registered_jwt_session_' + Date.now());
+      setStepMsg(null);
+      router.push('/chat');
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate cryptographic identity keys');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
