@@ -1,5 +1,14 @@
 # SecureChat: Secure and End-to-End Encrypted Private Messaging Web Application
 
+## Group 7 — Project Team
+
+| Name | Role & Responsibility |
+| :--- | :--- |
+| **SENG KOEMNAN** | Project Manager & Full-Stack Lead |
+| **SOK SOVANRITH** | Frontend Developer (Next.js, UI/UX, Tailwind CSS) |
+| **REAM RITHY** | Backend & AI Engineer (Express, Socket.IO, Cryptography) |
+| **HENG MINOU** | QA & DevOps Specialist (Docker, Testing, Security Audit) |
+
 ## 1. Project Introduction
 
 SecureChat is a web-based private messaging application designed to provide secure, real-time, one-to-one text communication between users. The project focuses on protecting message confidentiality, securing user accounts, preventing unauthorized access, and reducing the risk of sensitive information leakage.
