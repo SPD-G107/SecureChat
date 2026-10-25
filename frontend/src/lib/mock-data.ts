@@ -16,6 +16,8 @@ export interface MockMessage {
   senderId: string;
   text: string;
   encryptedPreview: string;
+  iv?: string;
+  macTag?: string;
   timestamp: string;
   status: 'sent' | 'delivered' | 'read';
 }
