@@ -1,5 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --teal-nav: #082f2f;
   --teal-dark: #041f1f;
@@ -10,12 +14,6 @@
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
   --border-subtle: rgba(255, 255, 255, 0.08);
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 body {
