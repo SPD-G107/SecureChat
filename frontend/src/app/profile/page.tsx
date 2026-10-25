@@ -5,13 +5,19 @@ import { useRouter } from 'next/navigation';
 import { ApiClient } from '@/lib/api-client';
 import { User, LogOut, Key, Shield, Calendar } from 'lucide-react';
 
+import { CURRENT_USER } from '@/lib/mock-data';
+
 export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<any | null>(null);
 
   useEffect(() => {
     const raw = localStorage.getItem('securechat_user');
-    if (raw) setUser(JSON.parse(raw));
+    if (raw) {
+      setUser(JSON.parse(raw));
+    } else {
+      setUser(CURRENT_USER);
+    }
 
     ApiClient.get('/auth/me')
       .then((data) => setUser(data))
