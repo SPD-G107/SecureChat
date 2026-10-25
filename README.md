@@ -1,13 +1,14 @@
 # SecureChat: Secure and End-to-End Encrypted Private Messaging Web Application
 
-## Group 7 — Project Team
+## Group 7 — Project Team & Roles
 
-| Name | Role & Responsibility |
-| :--- | :--- |
-| **SENG KOEMNAN** | Project Manager & Full-Stack Lead |
-| **SOK SOVANRITH** | Frontend Developer (Next.js, UI/UX, Tailwind CSS) |
-| **REAM RITHY** | Backend & AI Engineer (Express, Socket.IO, Cryptography) |
-| **HENG MINOU** | QA & DevOps Specialist (Docker, Testing, Security Audit) |
+| No. | Member Name | Role | Assigned Responsibilities |
+| :---: | :--- | :--- | :--- |
+| 1 | **SENG KOEMNAN** | **Project Manager** | Project Coordination, Architecture, Documentation & Integration |
+| 2 | **SOK SOVANRITH**<br>**SENG KOEMNAN** | **Frontend Developers** | Next.js, TypeScript, Tailwind CSS, Responsive UI & Web Crypto E2EE |
+| 3 | **REAM RITHY**<br>**SENG KOEMNAN** | **Backend & AI Engineers** | Node.js, Express, Socket.IO Real-time Messaging, MySQL & Argon2id |
+| 4 | **HENG MINOU** | **QA & DevOps Specialist** | Docker, Docker Compose, Security & Tamper Testing, Quality Assurance |
+
 
 ## 1. Project Introduction
 
