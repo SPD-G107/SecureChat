@@ -6,6 +6,9 @@ import { Shield, MessageSquare, KeyRound, User, LogOut } from 'lucide-react';
 export const metadata: Metadata = {
   title: 'SecureChat — End-to-End Encrypted Private Messaging',
   description: 'Private, real-time messaging with client-side Web Crypto E2EE and zero API leakage.',
+  icons: {
+    icon: '/favicon.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -13,12 +16,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="min-h-screen flex flex-col bg-[#0b1120] text-slate-100 antialiased">
         {/* Dark Teal Navigation Bar matching README Section 11 */}
-        <header className="bg-[#082f2f] border-b border-emerald-950 px-6 py-3.5 flex items-center justify-between sticky top-0 z-50 shadow-md">
-          <Link href="/" className="flex items-center gap-2.5 font-bold text-xl text-white">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-              <Shield className="w-5 h-5" />
-            </div>
-            <span className="tracking-tight">SecureChat</span>
+        <header className="bg-[#082f2f] border-b border-emerald-950 px-6 py-3 flex items-center justify-between sticky top-0 z-50 shadow-md">
+          <Link href="/" className="flex items-center gap-3 font-bold text-xl text-white group">
+            <img
+              src="/logo.png"
+              alt="SecureChat Logo"
+              className="w-9 h-9 rounded-full object-cover border border-emerald-400/50 shadow-md shadow-emerald-950 group-hover:scale-105 transition-transform"
+            />
+            <span className="tracking-tight font-extrabold bg-gradient-to-r from-white via-slate-100 to-emerald-300 bg-clip-text text-transparent">
+              SecureChat
+            </span>
           </Link>
 
           <nav className="flex items-center gap-5 text-sm font-medium">
