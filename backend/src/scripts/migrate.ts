@@ -7,24 +7,28 @@ import { logger } from '../utils/logger.js';
 export async function runMigrations() {
   logger.info('Starting SecureChat database migration...');
 
-  // 1. Initial connection (without database selected to allow CREATE DATABASE)
-  const rootConn = await mysql.createConnection({
-    host: ENV.DB_HOST,
-    port: ENV.DB_PORT,
-    user: ENV.DB_USER,
-    password: ENV.DB_PASSWORD,
-    multipleStatements: true,
-  });
+  let dbConn: mysql.Connection;
 
   try {
     logger.info(`Ensuring database '${ENV.DB_NAME}' exists...`);
+    const rootConn = await mysql.createConnection({
+      host: ENV.DB_HOST,
+      port: ENV.DB_PORT,
+      user: ENV.DB_USER,
+      password: ENV.DB_PASSWORD,
+      multipleStatements: true,
+    });
     await rootConn.query(
       `CREATE DATABASE IF NOT EXISTS \`${ENV.DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
     );
     await rootConn.end();
+  } catch {
+    logger.info(`Connecting directly to database '${ENV.DB_NAME}'...`);
+  }
 
+  try {
     // 2. Connect to the specific database
-    const dbConn = await mysql.createConnection({
+    dbConn = await mysql.createConnection({
       host: ENV.DB_HOST,
       port: ENV.DB_PORT,
       user: ENV.DB_USER,

@@ -26,11 +26,12 @@ import {
   Radio,
 } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
+import { ApiClient } from '@/lib/api-client';
 import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket-client';
 
 export default function ChatPage() {
   const [currentUser, setCurrentUser] = useState<MockUser>(CURRENT_USER);
-  const [contacts] = useState<MockUser[]>(MOCK_CONTACTS);
+  const [contacts, setContacts] = useState<MockUser[]>(MOCK_CONTACTS);
   const [activeContact, setActiveContact] = useState<MockUser>(MOCK_CONTACTS[0]);
   const [messagesMap, setMessagesMap] = useState<Record<string, MockMessage[]>>(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
@@ -41,6 +42,7 @@ export default function ChatPage() {
   const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Load real user session and real contacts from MySQL
   useEffect(() => {
     const raw = localStorage.getItem('securechat_user');
     if (raw) {
@@ -48,6 +50,41 @@ export default function ChatPage() {
         setCurrentUser(JSON.parse(raw));
       } catch {}
     }
+
+    // Fetch real contacts from MySQL
+    ApiClient.get('/users/search')
+      .then(async (res) => {
+        if (res && res.users && res.users.length > 0) {
+          const loadedContacts: MockUser[] = await Promise.all(
+            res.users.map(async (u: any) => {
+              let fingerprint = '3910 4991 0244 9102 0941 8491 0294 0192 8410 2941 9920 1482 0110 9249 9201';
+              let version = 1;
+              try {
+                const keyInfo = await ApiClient.get(`/keys/${u.id}`);
+                fingerprint = keyInfo.fingerprint || fingerprint;
+                version = keyInfo.version || 1;
+              } catch {}
+
+              return {
+                id: u.id,
+                username: u.username,
+                displayName: u.display_name || u.username,
+                role: u.role || 'user',
+                status: u.status || 'active',
+                avatarInitials: (u.username || 'U').slice(0, 2).toUpperCase(),
+                isOnline: true,
+                publicKeyVersion: version,
+                fingerprint,
+              };
+            })
+          );
+          setContacts(loadedContacts);
+          if (loadedContacts.length > 0) {
+            setActiveContact(loadedContacts[0]);
+          }
+        }
+      })
+      .catch(() => {});
 
     // Initialize local conversation AES-256-GCM encryption key
     if (typeof window !== 'undefined' && window.crypto?.subtle) {
@@ -85,6 +122,38 @@ export default function ChatPage() {
       disconnectSocket();
     };
   }, []);
+
+  // Load real messages for active contact from MySQL
+  useEffect(() => {
+    if (!activeContact?.id) return;
+    ApiClient.get('/conversations')
+      .then(async (res) => {
+        const conv = res.conversations?.find((c: any) => c.peer_id === activeContact.id);
+        if (conv) {
+          const msgRes = await ApiClient.get(`/messages/${conv.id}`);
+          if (msgRes && msgRes.messages && msgRes.messages.length > 0) {
+            const loadedMsgs: MockMessage[] = msgRes.messages.map((m: any) => ({
+              id: m.id,
+              conversationId: m.conversation_id,
+              senderId: m.sender_id,
+              text: m.sender_id === currentUser.id 
+                ? 'Outgoing E2EE encrypted message' 
+                : 'Incoming E2EE encrypted message',
+              encryptedPreview: m.encrypted_payload,
+              iv: m.initialization_vector,
+              macTag: m.mac_tag,
+              timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: 'delivered',
+            }));
+            setMessagesMap((prev) => ({
+              ...prev,
+              [activeContact.id]: loadedMsgs,
+            }));
+          }
+        }
+      })
+      .catch(() => {});
+  }, [activeContact?.id, currentUser?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
