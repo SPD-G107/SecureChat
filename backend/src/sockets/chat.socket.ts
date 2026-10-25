@@ -45,18 +45,19 @@ export const setupChatSockets = (io: Server) => {
       ephemeralPublicKey?: string;
     }) => {
       try {
-        const { conversationId, recipientId, encryptedPayload, iv, macTag, ephemeralPublicKey } = data;
+        const { recipientId, encryptedPayload, iv, macTag, ephemeralPublicKey } = data;
+        let targetConvId = data.conversationId;
 
-        // Verify conversation membership
-        const isParticipant = await ConversationRepository.isParticipant(conversationId, userId);
+        // Verify or auto-create conversation between sender and recipient
+        let isParticipant = targetConvId ? await ConversationRepository.isParticipant(targetConvId, userId) : false;
         if (!isParticipant) {
-          socket.emit('message:error', { error: 'Unauthorized: Not a participant in conversation' });
-          return;
+          const conv = await ConversationRepository.findOrCreateConversation(userId, recipientId);
+          targetConvId = conv.id;
         }
 
         // Store encrypted message in MySQL
         const saved = await ConversationRepository.saveEncryptedMessage({
-          conversationId,
+          conversationId: targetConvId,
           senderId: userId,
           encryptedPayload,
           iv,
@@ -64,11 +65,21 @@ export const setupChatSockets = (io: Server) => {
           ephemeralPublicKey,
         });
 
-        // Relay ciphertext to recipient's room
-        io.to(`user:${recipientId}`).emit('message:received', saved);
+        logger.info(`E2EE Ciphertext relayed from ${socket.user?.username} to ${recipientId}`);
+
+        // Relay ciphertext to recipient's personal room
+        io.to(`user:${recipientId}`).emit('message:received', {
+          id: saved.id,
+          conversation_id: saved.conversation_id,
+          sender_id: saved.sender_id,
+          encrypted_payload: saved.encrypted_payload,
+          initialization_vector: saved.initialization_vector,
+          mac_tag: saved.mac_tag,
+          created_at: saved.created_at,
+        });
 
         // Acknowledge delivery to sender
-        socket.emit('message:sent', { messageId: saved.id, conversationId });
+        socket.emit('message:sent', { messageId: saved.id, conversationId: targetConvId });
       } catch (err: any) {
         logger.error('Failed to relay encrypted message:', err.message);
         socket.emit('message:error', { error: 'Failed to deliver message' });

@@ -38,34 +38,9 @@ export default function LoginPage() {
         return;
       }
     } catch (err: any) {
-      // If server returned a business/credential error (401, 403)
-      if (err.message && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
-        setError(err.message || 'Authentication failed. Please verify credentials.');
-        setLoading(false);
-        return;
-      }
-
-      // If backend is offline during frontend UI evaluation, gracefully use demo session
-      const user =
-        username.toLowerCase() === 'admin'
-          ? { ...CURRENT_USER, username: 'admin', role: 'admin' as const, displayName: 'University Admin' }
-          : { ...CURRENT_USER, username: username || 'alice' };
-
-      localStorage.setItem('securechat_user', JSON.stringify(user));
-      localStorage.setItem('securechat_jwt', 'demo_jwt_session_' + Date.now());
-      router.push('/chat');
+      setError(err.message || 'Invalid username or password. Please try again.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleQuickFill = (role: 'alice' | 'admin') => {
-    if (role === 'alice') {
-      setUsername('alice');
-      setPassword('Password123!');
-    } else {
-      setUsername('admin');
-      setPassword('AdminPass123!');
     }
   };
 
@@ -106,7 +81,7 @@ export default function LoginPage() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="alice or admin"
+                placeholder="alice, bob, charlie, or admin"
                 className="w-full bg-slate-950/70 border border-slate-800 rounded-2xl pl-11 pr-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all shadow-inner"
               />
             </div>
@@ -126,29 +101,6 @@ export default function LoginPage() {
                 placeholder="••••••••••••"
                 className="w-full bg-slate-950/70 border border-slate-800 rounded-2xl pl-11 pr-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all shadow-inner"
               />
-            </div>
-          </div>
-
-          {/* Demo Quick-Fill Helper */}
-          <div className="p-3 rounded-2xl bg-[#062424]/40 border border-emerald-950/80 flex items-center justify-between">
-            <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> Quick Demo Fill:
-            </span>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleQuickFill('alice')}
-                className="text-[10px] px-2.5 py-1 rounded-xl bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 hover:bg-emerald-900/80 transition-colors font-semibold"
-              >
-                Alice (Lead)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickFill('admin')}
-                className="text-[10px] px-2.5 py-1 rounded-xl bg-purple-950/80 text-purple-300 border border-purple-700/60 hover:bg-purple-900/80 transition-colors font-semibold"
-              >
-                Admin
-              </button>
             </div>
           </div>
 
