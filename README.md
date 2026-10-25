@@ -32,6 +32,8 @@ The main objectives of SecureChat are:
 8. To build a basic administrator dashboard for user management and security-event review.
 9. To conduct security testing and document the results in a final report.
 
+**IMPOTANT FEATURE**: prevent API leakage fromm Server. AServer must run  everry library internally. 
+
 ---
 
 ## 4. Project Scope: Nine Core Features
