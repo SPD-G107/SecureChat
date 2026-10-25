@@ -18,34 +18,20 @@ import {
   Eye,
   EyeOff,
   User,
-  Check,
   CheckCheck,
   Shield,
   MessageSquare,
-  Sparkles,
-  Info,
-  X,
-  Smile,
-  RefreshCw,
-  Copy,
-  Terminal,
 } from 'lucide-react';
 
 export default function ChatPage() {
   const [currentUser, setCurrentUser] = useState<MockUser>(CURRENT_USER);
-  const [contacts, setContacts] = useState<MockUser[]>(MOCK_CONTACTS);
+  const [contacts] = useState<MockUser[]>(MOCK_CONTACTS);
   const [activeContact, setActiveContact] = useState<MockUser>(MOCK_CONTACTS[0]);
   const [messagesMap, setMessagesMap] = useState<Record<string, MockMessage[]>>(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showCiphertext, setShowCiphertext] = useState(false);
   const [dismissedWarnings, setDismissedWarnings] = useState<Record<string, boolean>>({});
-  const [isTyping, setIsTyping] = useState(false);
-  const [inspectedMessage, setInspectedMessage] = useState<MockMessage | null>(null);
-  const [showKeyWarningModal, setShowKeyWarningModal] = useState(false);
-  const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
-  const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
-  const [copiedKey, setCopiedKey] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,7 +45,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messagesMap, isTyping, activeContact]);
+  }, [messagesMap, activeContact]);
 
   const filteredContacts = contacts.filter(
     (c) =>
@@ -69,18 +55,12 @@ export default function ChatPage() {
 
   const activeMessages = messagesMap[activeContact.id] || [];
 
-  const handleSendMessage = (e?: React.FormEvent, customText?: string) => {
-    if (e) e.preventDefault();
-    const textToSend = (customText || inputText).trim();
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    const textToSend = inputText.trim();
     if (!textToSend) return;
 
-    // Generate simulated AES-256-GCM ciphertext
-    const simulatedIV = Array.from({ length: 12 }, () =>
-      Math.floor(Math.random() * 256).toString(16).padStart(2, '0')
-    ).join('');
-    const simulatedTag = Array.from({ length: 16 }, () =>
-      Math.floor(Math.random() * 256).toString(16).padStart(2, '0')
-    ).join('');
+    // Simulated AES-256-GCM ciphertext envelope
     const base64Cipher = btoa(encodeURIComponent(textToSend)).slice(0, 24) + '==';
 
     const newMsg: MockMessage = {
@@ -88,7 +68,7 @@ export default function ChatPage() {
       conversationId: `conv-${activeContact.id}`,
       senderId: currentUser.id,
       text: textToSend,
-      encryptedPreview: `${base64Cipher} (IV: ${simulatedIV.slice(0, 8)}... Tag: ${simulatedTag.slice(0, 8)}...)`,
+      encryptedPreview: base64Cipher,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'delivered',
     };
@@ -98,58 +78,7 @@ export default function ChatPage() {
       [activeContact.id]: [...(prev[activeContact.id] || []), newMsg],
     }));
 
-    if (!customText) setInputText('');
-
-    // Trigger interactive simulated response from contact
-    triggerSimulatedReply(textToSend, activeContact);
-  };
-
-  const triggerSimulatedReply = (userText: string, contact: MockUser) => {
-    setIsTyping(true);
-    setTimeout(() => {
-      setIsTyping(false);
-      let replyText = `Received! Decrypted your message via client ECDH P-256. 🔒`;
-      if (userText.toLowerCase().includes('hello') || userText.toLowerCase().includes('hi')) {
-        replyText = `Hello @${currentUser.username}! Our end-to-end encrypted session is active and verified.`;
-      } else if (userText.toLowerCase().includes('key') || userText.toLowerCase().includes('fingerprint')) {
-        replyText = `My current safety number starts with ${contact.fingerprint.slice(0, 19)}. Compare it anytime!`;
-      } else if (userText.toLowerCase().includes('secret') || userText.toLowerCase().includes('password')) {
-        replyText = `Got your confidential data. The relay server cannot read this plaintext! 🛡️`;
-      }
-
-      const replyMsg: MockMessage = {
-        id: 'reply-' + Date.now(),
-        conversationId: `conv-${contact.id}`,
-        senderId: contact.id,
-        text: replyText,
-        encryptedPreview: btoa(encodeURIComponent(replyText)).slice(0, 24) + '==',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        status: 'read',
-      };
-
-      setMessagesMap((prev) => ({
-        ...prev,
-        [contact.id]: [...(prev[contact.id] || []), replyMsg],
-      }));
-    }, 1400);
-  };
-
-  const handleAddReaction = (msgId: string, emoji: string) => {
-    setMessageReactions((prev) => ({
-      ...prev,
-      [msgId]: [...(prev[msgId] || []).filter((e) => e !== emoji), emoji],
-    }));
-    setActiveReactionMsgId(null);
-  };
-
-  const handleAcceptKeyRotation = () => {
-    setContacts((prev) =>
-      prev.map((c) =>
-        c.id === activeContact.id ? { ...c, publicKeyVersion: 2, status: 'active' } : c
-      )
-    );
-    setDismissedWarnings((prev) => ({ ...prev, [activeContact.id]: true }));
-    setShowKeyWarningModal(false);
+    setInputText('');
   };
 
   const hasKeyWarning = activeContact.publicKeyVersion > 1 && !dismissedWarnings[activeContact.id];
@@ -162,7 +91,7 @@ export default function ChatPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-emerald-400" />
-              Encrypted Chats
+              Contacts & Chats
             </h2>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800 font-mono">
               {filteredContacts.length} Contacts
@@ -220,10 +149,12 @@ export default function ChatPage() {
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-[11px] text-slate-400 truncate max-w-[140px]">
-                      {lastMsg ? lastMsg.text : 'Start encrypted conversation'}
+                      {lastMsg ? lastMsg.text : 'No messages yet'}
                     </span>
                     {hasAlert && (
-                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                      <span className="px-1.5 py-0.2 rounded bg-amber-950 text-amber-400 border border-amber-800 text-[9px] font-bold">
+                        Key v{contact.publicKeyVersion}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -241,15 +172,15 @@ export default function ChatPage() {
             <div>
               <p className="text-xs font-bold text-white leading-none">@{currentUser.username}</p>
               <span className="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> E2EE Active
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Identity Key Active
               </span>
             </div>
           </div>
           <Link
-            href="/settings"
+            href="/profile"
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
-            <Shield className="w-4 h-4 text-emerald-400" />
+            <User className="w-4 h-4 text-emerald-400" />
           </Link>
         </div>
       </aside>
@@ -267,16 +198,17 @@ export default function ChatPage() {
                 <h2 className="text-sm font-bold text-white">{activeContact.displayName}</h2>
                 <span className="text-slate-400 text-xs">(@{activeContact.username})</span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800 text-[10px] font-mono">
-                  <ShieldCheck className="w-3 h-3" /> P-256 v{activeContact.publicKeyVersion}
+                  <ShieldCheck className="w-3 h-3" /> E2EE Active (v{activeContact.publicKeyVersion})
                 </span>
               </div>
               <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
-                Fingerprint: {activeContact.fingerprint.slice(0, 24)}...
+                Safety Number: {activeContact.fingerprint.slice(0, 24)}...
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
+            {/* Ciphertext / Plaintext Toggle (README Feature 4 requirement) */}
             <button
               onClick={() => setShowCiphertext(!showCiphertext)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
@@ -289,35 +221,36 @@ export default function ChatPage() {
               {showCiphertext ? 'Show Plaintext' : 'Inspect Ciphertext'}
             </button>
 
+            {/* Public-Key Verification Link (README Feature 5 requirement) */}
             <Link
               href="/verify-key"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-xs text-emerald-300 hover:bg-emerald-900 transition-colors font-medium"
             >
               <Shield className="w-3.5 h-3.5 text-emerald-400" />
-              Safety Number
+              Verify Safety Number
             </Link>
           </div>
         </div>
 
-        {/* Key-Change Warning Banner (Feature 5) */}
+        {/* Key-Change Warning Banner (README Feature 5: Public-Key Verification and Key-Change Warning) */}
         {hasKeyWarning && (
           <div className="p-3 bg-amber-500/10 border-b border-amber-500/30 text-amber-200 text-xs flex items-center justify-between px-6">
             <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400 animate-bounce" />
+              <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400" />
               <span>
-                <strong>Cryptographic Key Change Warning:</strong> @{activeContact.username}&apos;s identity key changed to <strong>v{activeContact.publicKeyVersion}</strong>. Verify safety number to prevent Man-in-the-Middle attacks.
+                <strong>Key-Change Warning:</strong> @{activeContact.username}&apos;s identity key changed to version v{activeContact.publicKeyVersion}. Verify their safety number before transmitting sensitive data.
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowKeyWarningModal(true)}
-                className="px-3 py-1 bg-amber-500 text-slate-950 text-xs font-bold rounded-lg hover:bg-amber-400 transition-colors"
+            <div className="flex items-center gap-3">
+              <Link
+                href="/verify-key"
+                className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-lg transition-colors"
               >
-                Review & Verify
-              </button>
+                Verify Key
+              </Link>
               <button
                 onClick={() => setDismissedWarnings((prev) => ({ ...prev, [activeContact.id]: true }))}
-                className="text-xs text-slate-400 hover:text-white px-2 py-1"
+                className="text-xs text-slate-400 hover:text-white underline"
               >
                 Dismiss
               </button>
@@ -330,32 +263,31 @@ export default function ChatPage() {
           <div className="text-center my-2">
             <span className="px-4 py-1.5 rounded-full bg-emerald-950/60 border border-emerald-800/60 text-[11px] text-emerald-300 font-mono inline-flex items-center gap-2 shadow-inner">
               <Lock className="w-3.5 h-3.5 text-emerald-400" />
-              Messages in this chat are protected by client-side AES-256-GCM.
+              End-to-End Encrypted (AES-256-GCM). The server stores only ciphertext.
             </span>
           </div>
 
           {activeMessages.map((msg) => {
             const isOwn = msg.senderId === currentUser.id;
-            const reactions = messageReactions[msg.id] || [];
 
             return (
               <div
                 key={msg.id}
-                className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} group relative`}
+                className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}
               >
                 <div
-                  className={`max-w-[72%] px-4 py-3 rounded-2xl text-sm transition-all relative ${
+                  className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm transition-all ${
                     isOwn
-                      ? 'bg-emerald-600 text-white rounded-br-none shadow-lg shadow-emerald-950/40'
-                      : 'bg-slate-900 border border-slate-800/80 text-slate-100 rounded-bl-none shadow-md'
+                      ? 'bg-emerald-600 text-white rounded-br-none shadow-md shadow-emerald-950/40'
+                      : 'bg-slate-900 border border-slate-800/80 text-slate-100 rounded-bl-none shadow-sm'
                   }`}
                 >
                   {showCiphertext ? (
                     <div className="font-mono text-xs">
-                      <span className="opacity-70 text-[10px] block text-emerald-300 font-sans mb-1">
-                        Encrypted Envelope (AES-256-GCM):
+                      <span className="opacity-70 text-[10px] block text-emerald-200 font-sans mb-1">
+                        Encrypted Payload (AES-256-GCM):
                       </span>
-                      <p className="break-all text-emerald-200 bg-black/40 p-2 rounded-lg border border-emerald-900/40 select-all">
+                      <p className="break-all text-emerald-300 bg-black/40 p-2 rounded-lg border border-emerald-900/40 select-all">
                         {msg.encryptedPreview}
                       </p>
                     </div>
@@ -366,100 +298,23 @@ export default function ChatPage() {
                   <div className="flex items-center justify-end gap-1.5 mt-1.5 text-[10px] opacity-75">
                     <span>{msg.timestamp}</span>
                     {isOwn && <CheckCheck className="w-3 h-3 text-white" />}
-                    <button
-                      onClick={() => setInspectedMessage(msg)}
-                      title="Inspect Cryptographic Envelope"
-                      className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity hover:text-emerald-300"
-                    >
-                      <Terminal className="w-3 h-3" />
-                    </button>
                   </div>
-                </div>
-
-                {/* Reactions badge */}
-                {reactions.length > 0 && (
-                  <div className="flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-xs">
-                    {reactions.map((r, i) => (
-                      <span key={i}>{r}</span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Hover Quick Emoji Bar */}
-                <div
-                  className={`absolute top-0 ${
-                    isOwn ? 'right-full mr-2' : 'left-full ml-2'
-                  } hidden group-hover:flex items-center gap-1 bg-slate-900/90 border border-slate-800 px-2 py-1 rounded-xl shadow-xl z-20 backdrop-blur-sm`}
-                >
-                  {['🔒', '👍', '🛡️', '❤️', '🔥'].map((emoji) => (
-                    <button
-                      key={emoji}
-                      onClick={() => handleAddReaction(msg.id, emoji)}
-                      className="hover:scale-125 transition-transform text-xs p-1"
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => setInspectedMessage(msg)}
-                    className="p-1 hover:text-emerald-400 text-slate-400"
-                    title="Inspect Packet"
-                  >
-                    <Info className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               </div>
             );
           })}
 
-          {/* Typing Indicator */}
-          {isTyping && (
-            <div className="flex items-center gap-2 text-xs text-emerald-400 pl-2 py-1">
-              <div className="w-6 h-6 rounded-full bg-emerald-950 flex items-center justify-center font-bold text-[10px]">
-                {activeContact.avatarInitials}
-              </div>
-              <span className="italic">@{activeContact.username} is encrypting response...</span>
-              <span className="flex gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" />
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce [animation-delay:0.2s]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce [animation-delay:0.4s]" />
-              </span>
-            </div>
-          )}
-
           <div ref={messagesEndRef} />
-        </div>
-
-        {/* Quick Test Prompt Chips */}
-        <div className="px-6 py-2 border-t border-emerald-950/50 bg-[#082f2f]/10 flex items-center gap-2 overflow-x-auto text-xs text-slate-400">
-          <span className="flex items-center gap-1 shrink-0 text-[11px] font-semibold text-emerald-400">
-            <Sparkles className="w-3.5 h-3.5" /> Quick Test:
-          </span>
-          {[
-            'Hi Bob! Is our session E2EE verified?',
-            'Checking your safety number fingerprint 🔑',
-            'Testing encrypted payload delivery 🛡️',
-            'Hello! Can the server read this message?',
-          ].map((prompt, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => handleSendMessage(undefined, prompt)}
-              className="px-3 py-1 rounded-lg bg-slate-900/80 hover:bg-emerald-950 hover:text-emerald-300 border border-slate-800 text-[11px] truncate shrink-0 transition-colors"
-            >
-              {prompt}
-            </button>
-          ))}
         </div>
 
         {/* Input Bar */}
         <form
-          onSubmit={(e) => handleSendMessage(e)}
+          onSubmit={handleSendMessage}
           className="p-4 border-t border-emerald-950 bg-[#082f2f]/20 flex gap-3 items-center"
         >
           <input
             type="text"
-            placeholder={`Message @${activeContact.username} (Encrypted via AES-256-GCM)...`}
+            placeholder={`Type a message to @${activeContact.username} (Encrypted before transmission)...`}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             className="flex-1 bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors shadow-inner"
@@ -473,113 +328,6 @@ export default function ChatPage() {
           </button>
         </form>
       </section>
-
-      {/* Interactive Cryptographic Envelope Inspector Modal */}
-      {inspectedMessage && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="max-w-xl w-full bg-slate-900 border border-emerald-500/40 rounded-2xl p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
-            <button
-              onClick={() => setInspectedMessage(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                <Terminal className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-white text-base">E2EE Cryptographic Packet Inspector</h3>
-                <p className="text-xs text-slate-400">Payload envelope transmitted across the network</p>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-xs font-mono">
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-slate-400 text-[10px] block uppercase font-sans">1. Ciphertext Payload (Base64)</span>
-                <p className="text-emerald-400 break-all select-all mt-1">{inspectedMessage.encryptedPreview}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-slate-400 text-[10px] block uppercase font-sans">2. Authenticated Algorithm</span>
-                  <p className="text-white mt-1">AES-256-GCM (128-bit Tag)</p>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-slate-400 text-[10px] block uppercase font-sans">3. Key Exchange Protocol</span>
-                  <p className="text-white mt-1">ECDH Curve P-256 + HKDF</p>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-800/60 text-emerald-300">
-                <span className="text-slate-400 text-[10px] block uppercase font-sans">4. Server-Side Visibility (Zero-Plaintext Proof)</span>
-                <p className="text-xs font-sans mt-1">
-                  The MySQL database and Express relay only witness the base64 ciphertext and IV. Plaintext <strong>(&quot;{inspectedMessage.text}&quot;)</strong> exists exclusively inside the client browser memory.
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setInspectedMessage(null)}
-              className="mt-6 w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs transition-colors"
-            >
-              Close Packet Inspector
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Interactive Key Rotation Review Modal */}
-      {showKeyWarningModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="max-w-lg w-full bg-slate-900 border border-amber-500/50 rounded-2xl p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
-            <button
-              onClick={() => setShowKeyWarningModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-bold text-white text-base">Key Change Verification Review</h3>
-                <p className="text-xs text-slate-400">Verify @{activeContact.username}&apos;s new cryptographic identity</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
-              Your contact generated a new ECDH P-256 key pair. This could occur if they reinstalled the app, cleared their local browser storage, or if an attacker is attempting a Man-in-the-Middle (MITM) substitution.
-            </p>
-
-            <div className="space-y-3 text-xs mb-6 font-mono">
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-slate-400 text-[10px] block font-sans">New Key Version (v2) Safety Number:</span>
-                <p className="text-emerald-400 break-all select-all mt-1">{activeContact.fingerprint}</p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleAcceptKeyRotation}
-                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5"
-              >
-                <Check className="w-4 h-4" />
-                Trust & Verify New Key
-              </button>
-              <button
-                onClick={() => setShowKeyWarningModal(false)}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
