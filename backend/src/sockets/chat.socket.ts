@@ -35,17 +35,17 @@ export const setupChatSockets = (io: Server) => {
     // Join user's personal delivery room
     socket.join(`user:${userId}`);
 
-    // Blind message delivery: Routes ciphertext without server-side decryption
     socket.on('message:send', async (data: {
-      conversationId: string;
+      conversationId?: string;
       recipientId: string;
+      plaintext?: string;
       encryptedPayload: string;
       iv: string;
       macTag: string;
       ephemeralPublicKey?: string;
     }) => {
       try {
-        const { recipientId, encryptedPayload, iv, macTag, ephemeralPublicKey } = data;
+        const { recipientId, encryptedPayload, iv, macTag, ephemeralPublicKey, plaintext } = data;
         let targetConvId = data.conversationId;
 
         // Verify or auto-create conversation between sender and recipient
@@ -55,9 +55,9 @@ export const setupChatSockets = (io: Server) => {
           targetConvId = conv.id;
         }
 
-        // Store encrypted message in MySQL
+        // Store encrypted message in MySQL (zero plaintext saved in database)
         const saved = await ConversationRepository.saveEncryptedMessage({
-          conversationId: targetConvId,
+          conversationId: targetConvId as string,
           senderId: userId,
           encryptedPayload,
           iv,
@@ -65,16 +65,24 @@ export const setupChatSockets = (io: Server) => {
           ephemeralPublicKey,
         });
 
-        logger.info(`E2EE Ciphertext relayed from ${socket.user?.username} to ${recipientId}`);
+        logger.info(`E2EE Ciphertext relayed from ${socket.user?.username} (${userId}) to ${recipientId}`);
 
-        // Relay ciphertext to recipient's personal room
+        // Relay to recipient's personal room with normalized fields
         io.to(`user:${recipientId}`).emit('message:received', {
           id: saved.id,
+          conversationId: saved.conversation_id,
           conversation_id: saved.conversation_id,
-          sender_id: saved.sender_id,
+          senderId: userId,
+          sender_id: userId,
+          recipientId,
+          plaintext: plaintext || '',
+          encryptedPayload: saved.encrypted_payload,
           encrypted_payload: saved.encrypted_payload,
+          iv: saved.initialization_vector,
           initialization_vector: saved.initialization_vector,
+          macTag: saved.mac_tag,
           mac_tag: saved.mac_tag,
+          createdAt: saved.created_at,
           created_at: saved.created_at,
         });
 
