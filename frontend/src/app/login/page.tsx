@@ -48,11 +48,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center p-4 relative overflow-hidden bg-[#080d1a]">
-      {/* Background ambient lighting */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[400px] bg-emerald-500/10 blur-[130px] rounded-full pointer-events-none" />
-
-      <div className="max-w-md w-full p-8 rounded-3xl bg-slate-900/80 border border-emerald-500/20 shadow-2xl backdrop-blur-2xl relative z-10">
+    <div className="flex-1 flex items-center justify-center p-4 bg-[#0b0f19]">
+      <div className="max-w-md w-full p-8 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl">
         <div className="text-center mb-7">
           <div className="relative inline-block mb-3">
             <img
