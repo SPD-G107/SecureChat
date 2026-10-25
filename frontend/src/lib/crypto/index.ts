@@ -54,6 +54,32 @@ export class CryptoEngine {
   }
 
   /**
+   * Exports a private key to Base64 (pkcs8 format) for device-only client storage
+   */
+  static async exportPrivateKey(key: CryptoKey): Promise<string> {
+    const exported = await window.crypto.subtle.exportKey('pkcs8', key);
+    return btoa(String.fromCharCode(...new Uint8Array(exported)));
+  }
+
+  /**
+   * Imports a private key from Base64 (pkcs8 format)
+   */
+  static async importPrivateKey(base64: string): Promise<CryptoKey> {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return window.crypto.subtle.importKey(
+      'pkcs8',
+      bytes.buffer,
+      { name: 'ECDH', namedCurve: 'P-256' },
+      true,
+      ['deriveKey', 'deriveBits']
+    );
+  }
+
+  /**
    * Computes a SHA-256 fingerprint for public key verification / safety numbers
    */
   static async computeFingerprint(publicKeyBase64: string): Promise<string> {
@@ -62,6 +88,38 @@ export class CryptoEngine {
     const hash = await window.crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hash));
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Formats a fingerprint into 4-character hex chunks (Signal/WhatsApp style)
+   */
+  static formatFingerprintDisplay(hex: string): string {
+    return (hex.match(/.{1,4}/g) || []).join(' ').toUpperCase();
+  }
+
+  /**
+   * Securely saves user's cryptographic identity keypair locally on device
+   */
+  static saveLocalIdentity(username: string, privateKeyBase64: string, publicKeyBase64: string, fingerprint: string) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(
+      `securechat_keys_${username.toLowerCase()}`,
+      JSON.stringify({ privateKey: privateKeyBase64, publicKey: publicKeyBase64, fingerprint })
+    );
+  }
+
+  /**
+   * Retrieves user's cryptographic identity keypair from local device storage
+   */
+  static getLocalIdentity(username: string): { privateKey: string; publicKey: string; fingerprint: string } | null {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(`securechat_keys_${username.toLowerCase()}`);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
   }
 
   /**
