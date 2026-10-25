@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticate, requireAdmin, AuthenticatedRequest } from '../middleware/auth.middleware.js';
 import { query } from '../config/database.js';
+import { AuditRepository } from '../repositories/audit.repository.js';
 
 const router = Router();
 
@@ -31,16 +32,29 @@ router.patch('/users/:id/status', async (req: AuthenticatedRequest, res: Respons
     }
 
     await query('UPDATE users SET status = ? WHERE id = ?', [status, id]);
+
+    // Audit log administrative status change
+    await AuditRepository.logEvent({
+      userId: req.user!.userId,
+      action: 'ADMIN_USER_STATUS_CHANGE',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      details: {
+        targetUserId: id,
+        newStatus: status,
+      },
+    });
+
     res.json({ message: 'User status updated successfully' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update user status' });
   }
 });
 
-// View security audit logs
+// View security audit logs (zero plaintext/secrets)
 router.get('/audit-logs', async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const logs = await query<any[]>('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100');
+    const logs = await AuditRepository.getRecentLogs(100);
     res.json({ logs });
   } catch (err) {
     res.status(500).json({ error: 'Failed to retrieve audit logs' });
