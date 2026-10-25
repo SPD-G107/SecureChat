@@ -50,9 +50,11 @@ export default function LoginPage() {
     <div className="flex-1 flex items-center justify-center p-4">
       <div className="max-w-md w-full p-8 rounded-2xl bg-slate-900/90 border border-emerald-950 shadow-2xl backdrop-blur-md">
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto mb-3 shadow-inner">
-            <Shield className="w-6 h-6" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="SecureChat Logo"
+            className="w-16 h-16 rounded-full object-cover mx-auto mb-3 shadow-lg shadow-emerald-500/20 border border-emerald-400/50"
+          />
           <h1 className="text-xl font-bold text-white">Sign In to SecureChat</h1>
           <p className="text-xs text-slate-400 mt-1">Authenticate session via Argon2id verification</p>
         </div>

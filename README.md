@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo.png" width="160" height="160" alt="SecureChat Logo" style="border-radius: 50%;" />
+</p>
+
 # SecureChat: Secure and End-to-End Encrypted Private Messaging Web Application
 
 ## Group 7 — Project Team & Roles

@@ -5,6 +5,14 @@ export default function HomePage() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
       <div className="max-w-4xl mx-auto text-center relative z-10">
+        <div className="flex justify-center mb-6">
+          <img
+            src="/logo.png"
+            alt="SecureChat Official Logo"
+            className="w-28 h-28 rounded-full object-cover shadow-2xl shadow-emerald-500/25 border-2 border-emerald-400/60 hover:scale-105 transition-transform"
+          />
+        </div>
+
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold mb-6">
           <Shield className="w-4 h-4" /> Client-Side Web Crypto E2EE & Argon2id
         </div>
