@@ -3,13 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ApiClient } from '@/lib/api-client';
-import { Shield, Check, X, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { Shield, Check, X, AlertCircle, Loader2, ArrowLeft, Trash2 } from 'lucide-react';
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     ApiClient.get('/admin/users')
@@ -39,6 +41,24 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleDeleteUser = async (id: string, username: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete user @${username}? This will remove all their keys, chats, and messages from MySQL.`)) {
+      return;
+    }
+    setDeletingId(id);
+    setError(null);
+    try {
+      await ApiClient.delete(`/admin/users/${id}`);
+      setUsers((prev) => prev.filter((u) => u.id !== id));
+      setSuccessMsg(`User @${username} has been permanently deleted.`);
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete user account.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="flex-1 max-w-5xl mx-auto w-full p-6 py-10">
       <div className="mb-8 flex items-center justify-between">
@@ -64,6 +84,13 @@ export default function AdminUsersPage() {
         <div className="p-3 mb-6 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {successMsg && (
+        <div className="p-3 mb-6 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+          <Check className="w-4 h-4 shrink-0" />
+          <span>{successMsg}</span>
         </div>
       )}
 
@@ -112,17 +139,32 @@ export default function AdminUsersPage() {
                     )}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button
-                      onClick={() => handleToggleStatus(u.id, u.status)}
-                      disabled={updatingId === u.id}
-                      className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition-colors disabled:opacity-50"
-                    >
-                      {updatingId === u.id
-                        ? 'Updating...'
-                        : u.status === 'active'
-                        ? 'Suspend'
-                        : 'Activate'}
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => handleToggleStatus(u.id, u.status)}
+                        disabled={updatingId === u.id}
+                        className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition-colors disabled:opacity-50"
+                      >
+                        {updatingId === u.id
+                          ? 'Updating...'
+                          : u.status === 'active'
+                          ? 'Suspend'
+                          : 'Activate'}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(u.id, u.username)}
+                        disabled={deletingId === u.id || u.role === 'admin'}
+                        className="px-2.5 py-1 rounded bg-red-950/60 hover:bg-red-900 border border-red-800/60 text-red-300 font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
+                        title={u.role === 'admin' ? 'Cannot delete admin account' : 'Permanently delete account'}
+                      >
+                        {deletingId === u.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                        <span>Delete</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

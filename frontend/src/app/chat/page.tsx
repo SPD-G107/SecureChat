@@ -426,6 +426,44 @@ export default function ChatPage() {
         }
         loadActiveConversations(parsedUser);
       });
+
+      // 10. Real-time conversation deleted (removed from sidebar)
+      socket.on('conversation:deleted', (data: { conversationId: string }) => {
+        if (!data || !data.conversationId) return;
+        setConversations((prev) => {
+          const target = prev.find((c) => c.id === data.conversationId);
+          if (target && target.peer_id && parsedUser?.id) {
+            localStorage.removeItem(`securechat_msgs_${parsedUser.id}_${target.peer_id}`);
+            if (activeContactRef.current?.id === target.peer_id) {
+              setActiveContact(null);
+              activeContactRef.current = null;
+              localStorage.removeItem(`securechat_active_peer_contact_${parsedUser.id}`);
+            }
+          }
+          return prev.filter((c) => c.id !== data.conversationId);
+        });
+        if (parsedUser) loadActiveConversations(parsedUser);
+      });
+
+      // 11. Real-time user account deleted by administrator
+      socket.on('user:deleted', (data: { userId: string; username?: string }) => {
+        if (!data || !data.userId) return;
+        if (parsedUser?.id === data.userId) {
+          localStorage.removeItem('securechat_jwt');
+          localStorage.removeItem('securechat_user');
+          window.location.href = '/login?reason=deleted';
+          return;
+        }
+        setConversations((prev) => prev.filter((c) => c.peer_id !== data.userId));
+        setDirectoryUsers((prev) => prev.filter((u) => u.id !== data.userId));
+        if (activeContactRef.current?.id === data.userId) {
+          setActiveContact(null);
+          activeContactRef.current = null;
+          if (parsedUser?.id) {
+            localStorage.removeItem(`securechat_active_peer_contact_${parsedUser.id}`);
+          }
+        }
+      });
     }
 
     return () => {
@@ -773,6 +811,37 @@ export default function ChatPage() {
     }
   };
 
+  const handleDeleteConversation = async (convId?: string, peerId?: string, peerName?: string) => {
+    const targetConvId = convId || (activeContact ? conversations.find((c) => c.peer_id === activeContact.id)?.id : null);
+    const targetPeerId = peerId || activeContact?.id;
+    const targetName = peerName || (activeContact ? `@${activeContact.username}` : 'this conversation');
+
+    if (!targetConvId || !currentUser) return;
+    if (!window.confirm(`Delete conversation with ${targetName}? This will remove it from your sidebar and permanently delete all messages.`)) {
+      return;
+    }
+    try {
+      await ApiClient.delete(`/conversations/${targetConvId}`);
+      setConversations((prev) => prev.filter((c) => c.id !== targetConvId));
+      if (targetPeerId) {
+        setMessagesMap((prev) => {
+          const updated = { ...prev };
+          delete updated[targetPeerId];
+          return updated;
+        });
+        localStorage.removeItem(`securechat_msgs_${currentUser.id}_${targetPeerId}`);
+        if (activeContact?.id === targetPeerId) {
+          setActiveContact(null);
+          activeContactRef.current = null;
+          localStorage.removeItem(`securechat_active_peer_contact_${currentUser.id}`);
+        }
+      }
+      loadActiveConversations(currentUser);
+    } catch (err: any) {
+      console.error('Failed to delete conversation:', err);
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeContact || !currentUser) return;
@@ -1015,7 +1084,7 @@ export default function ChatPage() {
                 <button
                   key={conv.id}
                   onClick={() => handleSelectContact(contact)}
-                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-colors text-left relative ${
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-colors text-left relative group ${
                     isSelected
                       ? 'bg-emerald-500/10 border border-emerald-500/30 text-white'
                       : 'hover:bg-slate-800/50 text-slate-300 border border-transparent'
@@ -1045,14 +1114,28 @@ export default function ChatPage() {
                           </span>
                         )}
                       </span>
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        {conv.last_message_at
-                          ? new Date(conv.last_message_at).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : ''}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-slate-500 font-mono group-hover:hidden">
+                          {conv.last_message_at
+                            ? new Date(conv.last_message_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : ''}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteConversation(conv.id, contact.id, contact.displayName);
+                          }}
+                          className="hidden group-hover:inline-flex items-center justify-center p-0.5 rounded text-slate-400 hover:text-red-400 hover:bg-red-950/70 transition-colors"
+                          title="Delete chat from sidebar"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between mt-0.5">
                       <span className="text-[11px] text-slate-400 truncate max-w-[140px]">
@@ -1209,11 +1292,20 @@ export default function ChatPage() {
                 {/* Clear Chat History button */}
                 <button
                   onClick={handleClearChat}
-                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-slate-800/80 hover:bg-red-950/40 text-slate-400 hover:text-red-400 border-slate-700 hover:border-red-500/40"
-                  title="Clear conversation history"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700"
+                  title="Clear conversation message history"
+                >
+                  <span className="hidden sm:inline">Clear Chat</span>
+                </button>
+
+                {/* Delete Entire Conversation button */}
+                <button
+                  onClick={() => handleDeleteConversation()}
+                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-red-950/40 hover:bg-red-900/60 text-red-300 hover:text-red-200 border-red-900/50 hover:border-red-600"
+                  title="Delete conversation from sidebar and database"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Clear Chat</span>
+                  <span className="hidden sm:inline">Delete Chat</span>
                 </button>
 
                 {/* Desktop Close Chat button */}

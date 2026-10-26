@@ -160,6 +160,13 @@ export class ConversationRepository {
     return true;
   }
 
+  static async deleteConversation(conversationId: string, userId: string): Promise<boolean> {
+    const isMember = await this.isParticipant(conversationId, userId);
+    if (!isMember) return false;
+    await query('DELETE FROM conversations WHERE id = ?', [conversationId]);
+    return true;
+  }
+
   static async getConversationById(conversationId: string): Promise<Conversation | null> {
     const rows = await query<Conversation[]>('SELECT * FROM conversations WHERE id = ?', [conversationId]);
     return rows[0] || null;
