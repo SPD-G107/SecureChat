@@ -384,37 +384,49 @@ export default function ChatPage() {
     ApiClient.get('/conversations')
       .then(async (res) => {
         const conv = res.conversations?.find((c: any) => c.peer_id === activeContact.id);
-        if (conv) {
-          const msgRes = await ApiClient.get(`/messages/${conv.id}`);
-          if (msgRes && msgRes.messages && msgRes.messages.length > 0) {
-            const savedRaw = localStorage.getItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`);
-            const localSaved: ChatMessage[] = savedRaw ? JSON.parse(savedRaw) : [];
+          if (conv) {
+            const msgRes = await ApiClient.get(`/messages/${conv.id}`);
+            if (msgRes && Array.isArray(msgRes.messages) && msgRes.messages.length > 0) {
+              const savedRaw = localStorage.getItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`);
+              const localSaved: ChatMessage[] = savedRaw ? JSON.parse(savedRaw) : [];
 
-            const loadedMsgs: ChatMessage[] = msgRes.messages.map((m: any) => {
-              const matchedLocal = localSaved.find((loc) => loc.id === m.id);
-              const displayText = matchedLocal?.text || (m.sender_id === currentUser.id ? 'Encrypted outgoing message' : 'Encrypted incoming message');
+              const loadedMsgs: ChatMessage[] = msgRes.messages.map((m: any, idx: number) => {
+                const matchedLocal = localSaved.find(
+                  (loc) => loc.id === m.id || (loc.encryptedPreview && loc.encryptedPreview === m.encrypted_payload)
+                ) || localSaved[idx];
 
-              return {
-                id: m.id,
-                conversationId: m.conversation_id,
-                senderId: m.sender_id,
-                text: displayText,
-                encryptedPreview: m.encrypted_payload,
-                iv: m.initialization_vector,
-                macTag: m.mac_tag,
-                timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                status: m.delivery_status || 'delivered',
-              };
-            });
+                const displayText = matchedLocal?.text || (m.sender_id === currentUser.id ? 'Encrypted outgoing message' : 'Encrypted incoming message');
 
-            setMessagesMap((prev) => ({
-              ...prev,
-              [activeContact.id]: loadedMsgs,
-            }));
+                return {
+                  id: m.id,
+                  conversationId: m.conversation_id,
+                  senderId: m.sender_id,
+                  text: displayText,
+                  encryptedPreview: m.encrypted_payload,
+                  iv: m.initialization_vector,
+                  macTag: m.mac_tag,
+                  timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  status: m.delivery_status || 'delivered',
+                };
+              });
+
+              // Keep local text cache prioritized over placeholder strings
+              const finalMsgs = localSaved.length > 0
+                ? localSaved.map((loc, i) => {
+                    const remote = loadedMsgs[i];
+                    return remote ? { ...remote, text: loc.text || remote.text } : loc;
+                  })
+                : loadedMsgs;
+
+              setMessagesMap((prev) => ({
+                ...prev,
+                [activeContact.id]: finalMsgs,
+              }));
+              localStorage.setItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`, JSON.stringify(finalMsgs));
+            }
           }
-        }
-      })
-      .catch(() => {});
+        })
+        .catch(() => {});
   }, [activeContact?.id, currentUser?.id]);
 
   useEffect(() => {
