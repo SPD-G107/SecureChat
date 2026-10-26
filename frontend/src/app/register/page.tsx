@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { Shield, Lock, User, ArrowRight, AlertCircle, Key, CheckCircle, Sparkles } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
-import { CURRENT_USER } from '@/lib/mock-data';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -41,47 +40,29 @@ export default function RegisterPage() {
       CryptoEngine.saveLocalIdentity(username, privKey, pubKey, fingerprint);
 
       setStepMsg('Registering account with Argon2id & public key publishing...');
-      try {
-        const res = await ApiClient.post('/auth/register', {
-          username: username.trim().toLowerCase(),
-          password,
-          displayName: displayName || username,
-          publicKey: pubKey,
-          fingerprint,
-        });
-
-        if (res && res.token && res.user) {
-          localStorage.setItem('securechat_jwt', res.token);
-          localStorage.setItem('securechat_user', JSON.stringify(res.user));
-          setStepMsg(null);
-          router.push('/chat');
-          return;
-        }
-      } catch (apiErr: any) {
-        if (apiErr.message && !apiErr.message.includes('Failed to fetch') && !apiErr.message.includes('NetworkError')) {
-          setError(apiErr.message || 'Registration failed');
-          setLoading(false);
-          setStepMsg(null);
-          return;
-        }
-      }
-
-      // Offline evaluation fallback
-      const newUser = {
-        ...CURRENT_USER,
-        username: username.toLowerCase(),
+      const res = await ApiClient.post('/auth/register', {
+        username: username.trim().toLowerCase(),
+        password,
         displayName: displayName || username,
         publicKey: pubKey,
         fingerprint,
-      };
-      localStorage.setItem('securechat_user', JSON.stringify(newUser));
-      localStorage.setItem('securechat_jwt', 'registered_jwt_session_' + Date.now());
-      setStepMsg(null);
-      router.push('/chat');
+      });
+
+      if (res && res.token && res.user) {
+        localStorage.setItem('securechat_jwt', res.token);
+        localStorage.setItem('securechat_user', JSON.stringify(res.user));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('securechat_auth'));
+        }
+        setStepMsg(null);
+        router.push('/chat');
+        return;
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to generate cryptographic identity keys');
+      setError(err.message || 'Registration failed. Please check backend connection.');
     } finally {
       setLoading(false);
+      setStepMsg(null);
     }
   };
 

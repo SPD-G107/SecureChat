@@ -4,6 +4,33 @@ export interface User {
   displayName?: string | null;
   role: 'user' | 'admin';
   status: 'active' | 'suspended';
+  avatarInitials?: string;
+  fingerprint?: string;
+  publicKeyVersion?: number;
+}
+
+export interface Contact {
+  id: string;
+  username: string;
+  displayName: string;
+  role: 'user' | 'admin';
+  status: 'active' | 'suspended';
+  avatarInitials: string;
+  isOnline: boolean;
+  publicKeyVersion: number;
+  fingerprint: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  text: string;
+  encryptedPreview: string;
+  iv?: string;
+  macTag?: string;
+  timestamp: string;
+  status: 'sent' | 'delivered' | 'read';
 }
 
 export interface Conversation {

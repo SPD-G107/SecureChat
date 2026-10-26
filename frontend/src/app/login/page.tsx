@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Shield, Lock, User, ArrowRight, AlertCircle, Sparkles, KeyRound } from 'lucide-react';
 import { ApiClient } from '@/lib/api-client';
-import { CURRENT_USER } from '@/lib/mock-data';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,6 +33,9 @@ export default function LoginPage() {
       if (res && res.token && res.user) {
         localStorage.setItem('securechat_jwt', res.token);
         localStorage.setItem('securechat_user', JSON.stringify(res.user));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('securechat_auth'));
+        }
         router.push('/chat');
         return;
       }
