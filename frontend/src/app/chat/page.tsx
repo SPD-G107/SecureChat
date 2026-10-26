@@ -651,6 +651,12 @@ export default function ChatPage() {
   }
 
   const isCurrentPeerOnline = activeContact ? onlineUserIds.has(activeContact.id) : false;
+  const isPeerVerified = Boolean(
+    activeContact &&
+      currentUser &&
+      typeof window !== 'undefined' &&
+      localStorage.getItem(`securechat_verified_${currentUser.id}_${activeContact.id}`) === activeContact.fingerprint
+  );
 
   return (
     <div className="flex-1 flex overflow-hidden h-[calc(100vh-57px)] bg-[#0b0f19]">
@@ -737,8 +743,13 @@ export default function ChatPage() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-xs truncate text-white">
-                        {contact.displayName}
+                      <span className="font-semibold text-xs truncate text-white flex items-center gap-1">
+                        <span>{contact.displayName}</span>
+                        {typeof window !== 'undefined' && currentUser && localStorage.getItem(`securechat_verified_${currentUser.id}_${contact.id}`) === contact.fingerprint && (
+                          <span title="Verified Safety Key">
+                            <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+                          </span>
+                        )}
                       </span>
                       <span className="text-[10px] text-slate-500 font-mono">
                         {conv.last_message_at
@@ -825,6 +836,15 @@ export default function ChatPage() {
                       <span className="hidden sm:inline">E2EE Active</span>
                       <span className="sm:hidden">E2EE</span>
                     </span>
+
+                    {/* Verified Badge if marked as verified */}
+                    {isPeerVerified && (
+                      <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] sm:text-[10px] font-medium shrink-0 animate-in fade-in" title="Safety Number Verified & Trusted">
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="hidden sm:inline">Verified Contact</span>
+                        <span className="sm:hidden">Verified</span>
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5">
@@ -870,11 +890,15 @@ export default function ChatPage() {
                 {/* Public-Key Verification Link */}
                 <Link
                   href={`/verify-key?user=${activeContact.username}`}
-                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition-colors font-medium"
-                  title="Verify Safety Key"
+                  className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs border transition-colors font-medium ${
+                    isPeerVerified
+                      ? 'bg-emerald-950 text-emerald-300 border-emerald-600'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                  }`}
+                  title={isPeerVerified ? 'Safety Number Verified & Trusted' : 'Verify Safety Key'}
                 >
-                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="hidden sm:inline">Verify</span>
+                  <ShieldCheck className={`w-3.5 h-3.5 ${isPeerVerified ? 'text-emerald-400' : 'text-slate-400'}`} />
+                  <span className="hidden sm:inline">{isPeerVerified ? 'Verified ✓' : 'Verify'}</span>
                 </Link>
 
                 {/* Desktop Close Chat button */}
