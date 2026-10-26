@@ -16,6 +16,7 @@ const io = new Server(server, {
 });
 
 setupChatSockets(io);
+app.set('io', io);
 
 server.listen(ENV.PORT, () => {
   logger.info(`SecureChat Backend running on port ${ENV.PORT} [${ENV.NODE_ENV}]`);

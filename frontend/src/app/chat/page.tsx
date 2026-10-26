@@ -282,6 +282,48 @@ export default function ChatPage() {
         // Refresh conversation list so the new chat shows up immediately
         loadActiveConversations(parsedUser);
       });
+
+      // 6. Real-time contact profile and avatar update
+      socket.on('user:profile_updated', (data: { userId: string; displayName?: string; avatarUrl?: string | null }) => {
+        if (!data?.userId) return;
+
+        // Update contacts in conversations list
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.peer_id === data.userId && c.contact) {
+              const updatedContact: Contact = {
+                ...c.contact,
+                displayName: data.displayName || c.contact.displayName,
+                avatarUrl: data.avatarUrl !== undefined ? data.avatarUrl : c.contact.avatarUrl,
+              };
+              return {
+                ...c,
+                peer_display_name: data.displayName || c.peer_display_name,
+                peer_avatar_url: data.avatarUrl !== undefined ? data.avatarUrl : c.peer_avatar_url,
+                contact: updatedContact,
+              };
+            }
+            return c;
+          })
+        );
+
+        // Update activeContact if currently chatting with this user
+        setActiveContact((prev) => {
+          if (prev && prev.id === data.userId) {
+            const updated = {
+              ...prev,
+              displayName: data.displayName || prev.displayName,
+              avatarUrl: data.avatarUrl !== undefined ? data.avatarUrl : prev.avatarUrl,
+            };
+            activeContactRef.current = updated;
+            if (parsedUser?.id) {
+              localStorage.setItem(`securechat_active_peer_contact_${parsedUser.id}`, JSON.stringify(updated));
+            }
+            return updated;
+          }
+          return prev;
+        });
+      });
     }
 
     return () => {
