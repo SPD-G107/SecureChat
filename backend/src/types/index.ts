@@ -46,5 +46,6 @@ export interface MessageRecord {
   mac_tag: string;
   ephemeral_public_key?: string | null;
   delivery_status: 'sent' | 'delivered' | 'read';
+  is_edited?: boolean;
   created_at: Date;
 }

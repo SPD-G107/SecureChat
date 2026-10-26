@@ -24,6 +24,8 @@ import {
   MessageSquarePlus,
   X,
   ArrowLeft,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
@@ -55,6 +57,7 @@ export default function ChatPage() {
   const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null);
   const [loading, setLoading] = useState(true);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
 
   // Real Socket.IO Presence Tracking
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -324,6 +327,74 @@ export default function ChatPage() {
           return prev;
         });
       });
+
+      // 7. Real-time message edited
+      socket.on('message:edited', (data: any) => {
+        if (!data || !data.messageId) return;
+        setMessagesMap((prev) => {
+          const updated = { ...prev };
+          let changed = false;
+          for (const key of Object.keys(updated)) {
+            const prevMsgs = updated[key];
+            const newMsgs = prevMsgs.map((m) => {
+              if (m.id === data.messageId) {
+                changed = true;
+                return {
+                  ...m,
+                  text: data.plaintext || m.text,
+                  encryptedPreview: data.encryptedPayload || m.encryptedPreview,
+                  iv: data.iv || m.iv,
+                  macTag: data.macTag || m.macTag,
+                  isEdited: true,
+                };
+              }
+              return m;
+            });
+            if (changed) {
+              updated[key] = newMsgs;
+              if (parsedUser?.id) {
+                localStorage.setItem(`securechat_msgs_${parsedUser.id}_${key}`, JSON.stringify(newMsgs));
+              }
+            }
+          }
+          return changed ? updated : prev;
+        });
+      });
+
+      // 8. Real-time message deleted (Delete for everyone)
+      socket.on('message:deleted', (data: { messageId: string; conversationId?: string }) => {
+        if (!data || !data.messageId) return;
+        setMessagesMap((prev) => {
+          const updated = { ...prev };
+          let changed = false;
+          for (const key of Object.keys(updated)) {
+            const prevMsgs = updated[key];
+            if (prevMsgs.some((m) => m.id === data.messageId)) {
+              changed = true;
+              const filtered = prevMsgs.filter((m) => m.id !== data.messageId);
+              updated[key] = filtered;
+              if (parsedUser?.id) {
+                localStorage.setItem(`securechat_msgs_${parsedUser.id}_${key}`, JSON.stringify(filtered));
+              }
+            }
+          }
+          return changed ? updated : prev;
+        });
+      });
+
+      // 9. Real-time conversation cleared
+      socket.on('conversation:cleared', (data: { conversationId: string }) => {
+        if (!data || !data.conversationId) return;
+        if (activeContactRef.current && parsedUser?.id) {
+          setMessagesMap((prev) => {
+            const updated = { ...prev };
+            updated[activeContactRef.current!.id] = [];
+            localStorage.removeItem(`securechat_msgs_${parsedUser.id}_${activeContactRef.current!.id}`);
+            return updated;
+          });
+        }
+        loadActiveConversations(parsedUser);
+      });
     }
 
     return () => {
@@ -564,6 +635,7 @@ export default function ChatPage() {
                 macTag: m.mac_tag,
                 timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 status: resolvedStatus,
+                isEdited: Boolean(m.is_edited),
               };
             });
 
@@ -572,7 +644,13 @@ export default function ChatPage() {
               const loc = localSaved.find(
                 (l) => l.id === remote.id || (l.encryptedPreview && l.encryptedPreview === remote.encryptedPreview)
               );
-              return loc ? { ...remote, text: loc.text || remote.text } : remote;
+              return loc
+                ? {
+                    ...remote,
+                    text: loc.text || remote.text,
+                    isEdited: Boolean(remote.isEdited || loc.isEdited),
+                  }
+                : remote;
             });
 
             setMessagesMap((prev) => ({
@@ -606,11 +684,131 @@ export default function ChatPage() {
 
   const activeMessages = activeContact ? messagesMap[activeContact.id] || [] : [];
 
+  const handleStartEdit = (msg: ChatMessage) => {
+    setEditingMessage(msg);
+    setInputText(msg.text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessage(null);
+    setInputText('');
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!activeContact || !currentUser) return;
+    try {
+      await ApiClient.delete(`/messages/${messageId}`);
+      setMessagesMap((prev) => {
+        const currentList = prev[activeContact.id] || [];
+        const updated = currentList.filter((m) => m.id !== messageId);
+        if (currentUser?.id) {
+          localStorage.setItem(
+            `securechat_msgs_${currentUser.id}_${activeContact.id}`,
+            JSON.stringify(updated)
+          );
+        }
+        return {
+          ...prev,
+          [activeContact.id]: updated,
+        };
+      });
+      loadActiveConversations(currentUser);
+    } catch (err: any) {
+      console.error('Failed to delete message:', err);
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (!activeContact || !currentUser) return;
+    if (!window.confirm(`Clear all messages with @${activeContact.username}? This will delete the message history.`)) {
+      return;
+    }
+    try {
+      const conv = conversations.find((c) => c.peer_id === activeContact.id);
+      if (conv) {
+        await ApiClient.delete(`/messages/conversation/${conv.id}`);
+      }
+      setMessagesMap((prev) => {
+        const updated = { ...prev };
+        updated[activeContact.id] = [];
+        localStorage.removeItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`);
+        return updated;
+      });
+      loadActiveConversations(currentUser);
+    } catch (err: any) {
+      console.error('Failed to clear conversation:', err);
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeContact || !currentUser) return;
     const textToSend = inputText.trim();
     if (!textToSend) return;
+
+    // Handle message editing mode
+    if (editingMessage) {
+      const targetMsgId = editingMessage.id;
+      let cipherBase64 = '';
+      let ivBase64 = '';
+      let macTagBase64 = '';
+
+      try {
+        if (cryptoKey) {
+          const enc = await CryptoEngine.encrypt(textToSend, cryptoKey);
+          cipherBase64 = enc.ciphertext;
+          ivBase64 = enc.iv;
+          macTagBase64 = enc.macTag;
+        } else {
+          cipherBase64 = btoa(encodeURIComponent(textToSend)).slice(0, 24) + '==';
+          ivBase64 = btoa('iv_nonce_96').slice(0, 16);
+          macTagBase64 = btoa('auth_mac_128').slice(0, 22) + '==';
+        }
+      } catch {
+        cipherBase64 = btoa(encodeURIComponent(textToSend)).slice(0, 24) + '==';
+      }
+
+      try {
+        await ApiClient.patch(`/messages/${targetMsgId}`, {
+          encryptedPayload: cipherBase64,
+          iv: ivBase64,
+          macTag: macTagBase64,
+          plaintext: textToSend,
+        });
+
+        setMessagesMap((prev) => {
+          const currentList = prev[activeContact.id] || [];
+          const updated = currentList.map((m) =>
+            m.id === targetMsgId
+              ? {
+                  ...m,
+                  text: textToSend,
+                  encryptedPreview: cipherBase64,
+                  iv: ivBase64,
+                  macTag: macTagBase64,
+                  isEdited: true,
+                }
+              : m
+          );
+          if (currentUser?.id) {
+            localStorage.setItem(
+              `securechat_msgs_${currentUser.id}_${activeContact.id}`,
+              JSON.stringify(updated)
+            );
+          }
+          return {
+            ...prev,
+            [activeContact.id]: updated,
+          };
+        });
+      } catch (err: any) {
+        console.error('Failed to edit message:', err);
+      }
+
+      setEditingMessage(null);
+      setInputText('');
+      return;
+    }
 
     let cipherBase64 = '';
     let ivBase64 = '';
@@ -974,6 +1172,16 @@ export default function ChatPage() {
                   <span className="hidden sm:inline">{isPeerVerified ? 'Verified ✓' : 'Verify'}</span>
                 </Link>
 
+                {/* Clear Chat History button */}
+                <button
+                  onClick={handleClearChat}
+                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-slate-800/80 hover:bg-red-950/40 text-slate-400 hover:text-red-400 border-slate-700 hover:border-red-500/40"
+                  title="Clear conversation history"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Clear Chat</span>
+                </button>
+
                 {/* Desktop Close Chat button */}
                 <button
                   onClick={handleBackToConversations}
@@ -1025,61 +1233,90 @@ export default function ChatPage() {
                 return (
                   <div
                     key={msg.id}
-                    className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}
+                    className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} mb-1.5`}
                   >
-                    <div
-                      className={`max-w-[85%] sm:max-w-[70%] px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-sm ${
-                        isOwn
-                          ? 'bg-emerald-600 text-white rounded-br-sm shadow-sm'
-                          : 'bg-slate-900 border border-slate-800 text-slate-100 rounded-bl-sm shadow-sm'
-                      }`}
-                    >
-                      {showCiphertext ? (
-                        <div className="font-mono text-xs space-y-1">
-                          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-1">
-                            <span className="text-[10px] text-emerald-300 font-sans font-semibold flex items-center gap-1">
-                              <Lock className="w-2.5 h-2.5" /> AES-256-GCM Payload
-                            </span>
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-black/40 text-emerald-400 font-mono">
-                              128-bit MAC
-                            </span>
-                          </div>
-                          <div className="break-all text-emerald-200 text-[11px]">
-                            {msg.encryptedPreview}
-                          </div>
-                          {msg.iv && (
-                            <div className="text-[9px] text-slate-300/80 break-all pt-0.5">
-                              IV: <span className="font-mono text-cyan-300">{msg.iv}</span>
-                            </div>
-                          )}
+                    <div className={`flex items-center gap-1.5 max-w-[85%] sm:max-w-[70%] ${isOwn ? 'flex-row' : 'flex-row-reverse'}`}>
+                      {/* Message Hover Actions for Sender */}
+                      {isOwn && (
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(msg)}
+                            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                            title="Edit message"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMessage(msg.id)}
+                            className="p-1 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                            title="Delete message for everyone"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                      ) : (
-                        <p className="break-words leading-relaxed text-xs sm:text-sm">{msg.text}</p>
                       )}
 
-                      {/* Accurate Checkmark Indicators: Sent (1 check), Delivered (2 checks gray), Read (2 checks cyan) */}
-                      <div className="flex items-center justify-end gap-1 mt-1 text-[10px] opacity-80 font-mono">
-                        <span>{msg.timestamp}</span>
-                        {isOwn && (
-                          <span
-                            className="flex items-center ml-0.5"
-                            title={
-                              msg.status === 'read'
-                                ? 'Seen / Read by recipient'
-                                : msg.status === 'delivered'
-                                ? 'Delivered to recipient device (Unread)'
-                                : 'Sent to server (Recipient offline / unread)'
-                            }
-                          >
-                            {msg.status === 'read' ? (
-                              <CheckCheck className="w-3.5 h-3.5 text-cyan-300 drop-shadow-[0_0_6px_rgba(103,232,249,0.9)]" />
-                            ) : msg.status === 'delivered' ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-100" />
-                            ) : (
-                              <Check className="w-3.5 h-3.5 text-emerald-200/40" />
+                      <div
+                        className={`flex-1 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-sm ${
+                          isOwn
+                            ? 'bg-emerald-600 text-white rounded-br-sm shadow-sm'
+                            : 'bg-slate-900 border border-slate-800 text-slate-100 rounded-bl-sm shadow-sm'
+                        }`}
+                      >
+                        {showCiphertext ? (
+                          <div className="font-mono text-xs space-y-1">
+                            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-1">
+                              <span className="text-[10px] text-emerald-300 font-sans font-semibold flex items-center gap-1">
+                                <Lock className="w-2.5 h-2.5" /> AES-256-GCM Payload
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-black/40 text-emerald-400 font-mono">
+                                128-bit MAC
+                              </span>
+                            </div>
+                            <div className="break-all text-emerald-200 text-[11px]">
+                              {msg.encryptedPreview}
+                            </div>
+                            {msg.iv && (
+                              <div className="text-[9px] text-slate-300/80 break-all pt-0.5">
+                                IV: <span className="font-mono text-cyan-300">{msg.iv}</span>
+                              </div>
                             )}
-                          </span>
+                          </div>
+                        ) : (
+                          <p className="break-words leading-relaxed text-xs sm:text-sm">{msg.text}</p>
                         )}
+
+                        {/* Accurate Checkmark Indicators: Sent (1 check), Delivered (2 checks gray), Read (2 checks cyan) */}
+                        <div className="flex items-center justify-end gap-1 mt-1 text-[10px] opacity-80 font-mono">
+                          {msg.isEdited && (
+                            <span className="italic text-[9px] text-emerald-200/90 mr-0.5 font-sans font-normal">
+                              (edited)
+                            </span>
+                          )}
+                          <span>{msg.timestamp}</span>
+                          {isOwn && (
+                            <span
+                              className="flex items-center ml-0.5"
+                              title={
+                                msg.status === 'read'
+                                  ? 'Seen / Read by recipient'
+                                  : msg.status === 'delivered'
+                                  ? 'Delivered to recipient device (Unread)'
+                                  : 'Sent to server (Recipient offline / unread)'
+                              }
+                            >
+                              {msg.status === 'read' ? (
+                                <CheckCheck className="w-3.5 h-3.5 text-cyan-300 drop-shadow-[0_0_6px_rgba(103,232,249,0.9)]" />
+                              ) : msg.status === 'delivered' ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-100" />
+                              ) : (
+                                <Check className="w-3.5 h-3.5 text-emerald-200/40" />
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1089,6 +1326,25 @@ export default function ChatPage() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Editing Message Banner */}
+            {editingMessage && (
+              <div className="px-3.5 sm:px-6 py-2 bg-emerald-950/70 border-t border-emerald-500/30 flex items-center justify-between text-xs animate-in fade-in">
+                <div className="flex items-center gap-2 truncate">
+                  <Pencil className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="font-semibold text-emerald-300">Editing message:</span>
+                  <span className="text-slate-300 truncate max-w-[200px] sm:max-w-md">&quot;{editingMessage.text}&quot;</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  title="Cancel editing"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             {/* Clean Input Bar */}
             <form
               onSubmit={handleSendMessage}
@@ -1096,7 +1352,7 @@ export default function ChatPage() {
             >
               <input
                 type="text"
-                placeholder={`Message @${activeContact.username}...`}
+                placeholder={editingMessage ? 'Edit your message...' : `Message @${activeContact.username}...`}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 className="flex-1 bg-slate-950/70 border border-slate-800 rounded-xl px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
@@ -1104,9 +1360,12 @@ export default function ChatPage() {
               <button
                 type="submit"
                 disabled={!inputText.trim()}
-                className="p-2 sm:p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-40 shrink-0"
+                className={`p-2 sm:p-2.5 rounded-xl text-white transition-colors disabled:opacity-40 shrink-0 ${
+                  editingMessage ? 'bg-teal-600 hover:bg-teal-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
+                title={editingMessage ? 'Save changes' : 'Send message'}
               >
-                <Send className="w-4 h-4" />
+                {editingMessage ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
               </button>
             </form>
           </>

@@ -75,9 +75,9 @@ export class ConversationRepository {
     return rows[0];
   }
 
-  static async getMessagesByConversation(conversationId: string, limit = 50): Promise<MessageRecord[]> {
+  static async getMessagesByConversation(conversationId: string, limit = 100): Promise<MessageRecord[]> {
     const rows = await query<MessageRecord[]>(
-      `SELECT id, conversation_id, sender_id, encrypted_payload, initialization_vector, mac_tag, ephemeral_public_key, delivery_status, created_at
+      `SELECT id, conversation_id, sender_id, encrypted_payload, initialization_vector, mac_tag, ephemeral_public_key, delivery_status, is_edited, created_at
        FROM messages
        WHERE conversation_id = ?
        ORDER BY created_at ASC
@@ -121,5 +121,47 @@ export class ConversationRepository {
       return conv.id;
     }
     return null;
+  }
+
+  static async editMessage(
+    messageId: string,
+    senderId: string,
+    encryptedPayload: string,
+    iv: string,
+    macTag: string
+  ): Promise<MessageRecord | null> {
+    await query(
+      `UPDATE messages 
+       SET encrypted_payload = ?, initialization_vector = ?, mac_tag = ?, is_edited = TRUE 
+       WHERE id = ? AND sender_id = ?`,
+      [encryptedPayload, iv, macTag, messageId, senderId]
+    );
+    const rows = await query<MessageRecord[]>('SELECT * FROM messages WHERE id = ?', [messageId]);
+    return rows[0] || null;
+  }
+
+  static async deleteMessage(
+    messageId: string,
+    userId: string
+  ): Promise<{ conversationId: string; senderId: string; deleted: boolean } | null> {
+    const rows = await query<any[]>('SELECT id, conversation_id, sender_id FROM messages WHERE id = ?', [messageId]);
+    if (!rows || rows.length === 0) return null;
+    const msg = rows[0];
+    if (msg.sender_id !== userId) return null;
+
+    await query('DELETE FROM messages WHERE id = ?', [messageId]);
+    return { conversationId: msg.conversation_id, senderId: msg.sender_id, deleted: true };
+  }
+
+  static async clearConversationMessages(conversationId: string, userId: string): Promise<boolean> {
+    const isMember = await this.isParticipant(conversationId, userId);
+    if (!isMember) return false;
+    await query('DELETE FROM messages WHERE conversation_id = ?', [conversationId]);
+    return true;
+  }
+
+  static async getConversationById(conversationId: string): Promise<Conversation | null> {
+    const rows = await query<Conversation[]>('SELECT * FROM conversations WHERE id = ?', [conversationId]);
+    return rows[0] || null;
   }
 }
