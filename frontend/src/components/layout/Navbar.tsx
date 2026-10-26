@@ -216,8 +216,12 @@ export default function Navbar() {
               }`}
               title="View Account Profile"
             >
-              <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-[10px]">
-                {getInitials(currentUser.username)}
+              <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-[10px] overflow-hidden shrink-0">
+                {currentUser?.avatarUrl ? (
+                  <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  getInitials(currentUser.username)
+                )}
               </div>
               <span className="font-semibold text-xs text-white max-w-[80px] sm:max-w-[100px] truncate hidden sm:inline">
                 @{currentUser.username}

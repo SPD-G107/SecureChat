@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     display_name VARCHAR(100),
+    avatar_url MEDIUMTEXT NULL,
     role ENUM('user', 'admin') DEFAULT 'user',
     status ENUM('active', 'suspended') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
