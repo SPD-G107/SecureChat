@@ -351,6 +351,7 @@ export default function ChatPage() {
             const found = enriched.find((c) => c.peer_id === savedPeerId);
             if (found && found.contact) {
               setActiveContact(found.contact);
+              activeContactRef.current = found.contact;
               localStorage.setItem(`securechat_active_peer_contact_${user.id}`, JSON.stringify(found.contact));
             } else {
               const savedContactStr = localStorage.getItem(`securechat_active_peer_contact_${user.id}`);
@@ -359,6 +360,7 @@ export default function ChatPage() {
                   const parsedContact = JSON.parse(savedContactStr);
                   if (parsedContact && parsedContact.id === savedPeerId) {
                     setActiveContact(parsedContact);
+                    activeContactRef.current = parsedContact;
                   }
                 } catch {}
               }
@@ -424,6 +426,7 @@ export default function ChatPage() {
   // Select contact to chat with
   const handleSelectContact = (contact: Contact) => {
     setActiveContact(contact);
+    activeContactRef.current = contact;
     setIsNewChatModalOpen(false);
     setSearchQuery('');
     setUnreadCounts((prev) => ({ ...prev, [contact.id]: 0 }));
@@ -445,6 +448,7 @@ export default function ChatPage() {
   // Back to conversations list (clears active contact from UI & LocalStorage)
   const handleBackToConversations = () => {
     setActiveContact(null);
+    activeContactRef.current = null;
     if (currentUser?.id) {
       localStorage.removeItem(`securechat_active_peer_${currentUser.id}`);
       localStorage.removeItem(`securechat_active_peer_contact_${currentUser.id}`);
@@ -1008,18 +1012,18 @@ export default function ChatPage() {
                             className="flex items-center ml-0.5"
                             title={
                               msg.status === 'read'
-                                ? 'Read by recipient'
+                                ? 'Seen / Read by recipient'
                                 : msg.status === 'delivered'
-                                ? 'Delivered to recipient device'
+                                ? 'Delivered to recipient device (Unread)'
                                 : 'Sent to server (Recipient offline / unread)'
                             }
                           >
                             {msg.status === 'read' ? (
                               <CheckCheck className="w-3.5 h-3.5 text-cyan-300 drop-shadow-[0_0_6px_rgba(103,232,249,0.9)]" />
                             ) : msg.status === 'delivered' ? (
-                              <CheckCheck className="w-3.5 h-3.5 text-emerald-200/50" />
+                              <Check className="w-3.5 h-3.5 text-emerald-100" />
                             ) : (
-                              <Check className="w-3.5 h-3.5 text-emerald-200/50" />
+                              <Check className="w-3.5 h-3.5 text-emerald-200/40" />
                             )}
                           </span>
                         )}
