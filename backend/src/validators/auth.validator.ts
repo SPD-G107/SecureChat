@@ -9,7 +9,11 @@ export const registerSchema = z.object({
   password: z
     .string()
     .min(8, 'Password must be at least 8 characters long')
-    .max(128, 'Password too long'),
+    .max(128, 'Password too long')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter (A-Z)')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter (a-z)')
+    .regex(/[0-9]/, 'Password must contain at least one number (0-9)')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character (!@#$%^&*)'),
   publicKey: z.string().min(10, 'Valid public key is required'),
   fingerprint: z.string().min(10, 'Public key fingerprint is required'),
   displayName: z.string().max(100).optional(),
