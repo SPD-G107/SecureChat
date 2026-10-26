@@ -9,6 +9,13 @@ interface AuthenticatedSocket extends Socket {
   user?: AuthTokenPayload;
 }
 
+// Global active presence tracker: userId -> active connection count
+const onlineUsers = new Map<string, number>();
+
+export const getOnlineUserIds = (): string[] => {
+  return Array.from(onlineUsers.keys());
+};
+
 export const setupChatSockets = (io: Server) => {
   // Socket.IO authentication middleware
   io.use((socket: AuthenticatedSocket, next) => {
@@ -30,10 +37,22 @@ export const setupChatSockets = (io: Server) => {
     const userId = socket.user?.userId;
     if (!userId) return;
 
-    logger.info(`User connected to real-time messaging: ${socket.user?.username} (${userId})`);
+    // Track real online presence
+    const currentCount = onlineUsers.get(userId) || 0;
+    onlineUsers.set(userId, currentCount + 1);
+
+    logger.info(`User connected to real-time messaging: ${socket.user?.username} (${userId}) [Active: ${currentCount + 1}]`);
 
     // Join user's personal delivery room
     socket.join(`user:${userId}`);
+
+    // Broadcast user presence to all connected clients if this is their first connection
+    if (currentCount === 0) {
+      io.emit('user:presence', { userId, username: socket.user?.username, status: 'online' });
+    }
+
+    // Send the full list of currently online user IDs to the newly connected socket
+    socket.emit('users:online_list', Array.from(onlineUsers.keys()));
 
     socket.on('message:send', async (data: {
       conversationId?: string;
@@ -55,6 +74,11 @@ export const setupChatSockets = (io: Server) => {
           targetConvId = conv.id;
         }
 
+        // Check if recipient is currently online in real-time
+        const recipientRoom = io.sockets.adapter.rooms.get(`user:${recipientId}`);
+        const isRecipientConnected = (recipientRoom?.size ?? 0) > 0;
+        const initialStatus = isRecipientConnected ? 'delivered' : 'sent';
+
         // Store encrypted message in MySQL (zero plaintext saved in database)
         const saved = await ConversationRepository.saveEncryptedMessage({
           conversationId: targetConvId as string,
@@ -65,7 +89,7 @@ export const setupChatSockets = (io: Server) => {
           ephemeralPublicKey,
         });
 
-        logger.info(`E2EE Ciphertext relayed from ${socket.user?.username} (${userId}) to ${recipientId}`);
+        logger.info(`E2EE Ciphertext relayed from ${socket.user?.username} (${userId}) to ${recipientId} [Status: ${initialStatus}]`);
 
         // Relay to recipient's personal room with normalized fields
         io.to(`user:${recipientId}`).emit('message:received', {
@@ -84,18 +108,48 @@ export const setupChatSockets = (io: Server) => {
           mac_tag: saved.mac_tag,
           createdAt: saved.created_at,
           created_at: saved.created_at,
+          status: initialStatus,
         });
 
-        // Acknowledge delivery to sender
-        socket.emit('message:sent', { messageId: saved.id, conversationId: targetConvId });
+        // Acknowledge delivery to sender with accurate status (sent vs delivered)
+        socket.emit('message:sent', {
+          messageId: saved.id,
+          conversationId: targetConvId,
+          status: initialStatus,
+        });
       } catch (err: any) {
         logger.error('Failed to relay encrypted message:', err.message);
         socket.emit('message:error', { error: 'Failed to deliver message' });
       }
     });
 
+    // Handle delivery acknowledgment from recipient device
+    socket.on('message:delivered', (data: { messageId: string; senderId: string; conversationId: string }) => {
+      io.to(`user:${data.senderId}`).emit('message:status_updated', {
+        messageId: data.messageId,
+        conversationId: data.conversationId,
+        status: 'delivered',
+      });
+    });
+
+    // Handle read receipt when recipient views/opens the message
+    socket.on('message:read', (data: { messageId?: string; senderId: string; conversationId: string }) => {
+      io.to(`user:${data.senderId}`).emit('message:status_updated', {
+        messageId: data.messageId,
+        conversationId: data.conversationId,
+        status: 'read',
+      });
+    });
+
     socket.on('disconnect', () => {
-      logger.info(`User disconnected: ${socket.user?.username}`);
+      const remaining = (onlineUsers.get(userId) || 1) - 1;
+      if (remaining <= 0) {
+        onlineUsers.delete(userId);
+        io.emit('user:presence', { userId, username: socket.user?.username, status: 'offline' });
+        logger.info(`User fully offline: ${socket.user?.username} (${userId})`);
+      } else {
+        onlineUsers.set(userId, remaining);
+      }
     });
   });
 };
