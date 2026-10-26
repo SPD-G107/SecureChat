@@ -12,7 +12,8 @@ export class AuthController {
       res.status(201).json(result);
     } catch (err: any) {
       if (err.name === 'ZodError') {
-        res.status(400).json({ error: 'Validation Error', details: err.errors });
+        const firstMsg = err.errors?.[0]?.message || 'Validation Error';
+        res.status(400).json({ error: firstMsg, details: err.errors });
         return;
       }
       res.status(400).json({ error: err.message || 'Registration failed' });
