@@ -33,6 +33,7 @@ export interface ChatMessage {
   macTag?: string;
   timestamp: string;
   status: 'sent' | 'delivered' | 'read';
+  isEdited?: boolean;
 }
 
 export interface Conversation {
@@ -53,6 +54,7 @@ export interface EncryptedMessageEnvelope {
   mac_tag: string;
   ephemeral_public_key?: string | null;
   delivery_status: 'sent' | 'delivered' | 'read';
+  is_edited?: boolean;
   created_at: string;
   decryptedContent?: string;
 }

@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS messages (
     mac_tag VARCHAR(128) NOT NULL,
     ephemeral_public_key TEXT NULL,
     delivery_status ENUM('sent', 'delivered', 'read') DEFAULT 'sent',
+    is_edited BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
