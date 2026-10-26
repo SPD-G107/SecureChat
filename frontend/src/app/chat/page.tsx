@@ -43,6 +43,34 @@ interface ConversationItem {
   contact?: Contact;
 }
 
+function formatChatDateDivider(dateStr?: string): string {
+  if (!dateStr) return 'Today';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'Today';
+
+  const today = new Date();
+  const isToday =
+    d.getDate() === today.getDate() &&
+    d.getMonth() === today.getMonth() &&
+    d.getFullYear() === today.getFullYear();
+  if (isToday) return 'Today';
+
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const isYesterday =
+    d.getDate() === yesterday.getDate() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getFullYear() === yesterday.getFullYear();
+  if (isYesterday) return 'Yesterday';
+
+  const isSameYear = d.getFullYear() === today.getFullYear();
+  return d.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    ...(isSameYear ? {} : { year: 'numeric' }),
+  });
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -237,6 +265,9 @@ export default function ChatPage() {
             minute: '2-digit',
           }),
           status: 'delivered',
+          createdAt: typeof (incoming.createdAt || incoming.created_at) === 'string'
+            ? (incoming.createdAt || incoming.created_at)
+            : new Date(incoming.createdAt || incoming.created_at || Date.now()).toISOString(),
         };
 
         setMessagesMap((prev) => {
@@ -636,6 +667,7 @@ export default function ChatPage() {
                 timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 status: resolvedStatus,
                 isEdited: Boolean(m.is_edited),
+                createdAt: typeof m.created_at === 'string' ? m.created_at : new Date(m.created_at).toISOString(),
               };
             });
 
@@ -649,6 +681,7 @@ export default function ChatPage() {
                     ...remote,
                     text: loc.text || remote.text,
                     isEdited: Boolean(remote.isEdited || loc.isEdited),
+                    createdAt: remote.createdAt || loc.createdAt,
                   }
                 : remote;
             });
@@ -847,6 +880,7 @@ export default function ChatPage() {
       macTag: macTagBase64,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: initialStatus,
+      createdAt: new Date().toISOString(),
     };
 
     setMessagesMap((prev) => {
@@ -1227,14 +1261,27 @@ export default function ChatPage() {
                 </span>
               </div>
 
-              {activeMessages.map((msg) => {
+              {activeMessages.map((msg, index) => {
                 const isOwn = msg.senderId === currentUser?.id;
+                const dateLabel = formatChatDateDivider(msg.createdAt);
+                const prevMsg = activeMessages[index - 1];
+                const prevDateLabel = prevMsg ? formatChatDateDivider(prevMsg.createdAt) : null;
+                const showDateDivider = dateLabel !== prevDateLabel;
 
                 return (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} mb-1.5`}
-                  >
+                  <React.Fragment key={msg.id}>
+                    {/* Telegram / Signal Style Floating Date Divider */}
+                    {showDateDivider && (
+                      <div className="flex justify-center my-3 sticky top-1 z-10 pointer-events-none">
+                        <span className="px-3.5 py-1 rounded-full bg-slate-900/90 backdrop-blur-md border border-slate-800 text-[11px] font-semibold text-slate-300 shadow-md">
+                          {dateLabel}
+                        </span>
+                      </div>
+                    )}
+
+                    <div
+                      className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} mb-1.5`}
+                    >
                     <div className={`flex items-center gap-1.5 max-w-[85%] sm:max-w-[70%] ${isOwn ? 'flex-row' : 'flex-row-reverse'}`}>
                       {/* Message Hover Actions for Sender */}
                       {isOwn && (
@@ -1320,6 +1367,7 @@ export default function ChatPage() {
                       </div>
                     </div>
                   </div>
+                </React.Fragment>
                 );
               })}
 
