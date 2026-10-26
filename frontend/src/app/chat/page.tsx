@@ -14,10 +14,10 @@ import {
   EyeOff,
   User as UserIcon,
   CheckCheck,
+  Check,
   Shield,
   MessageSquare,
   Copy,
-  Check,
   Users,
   Loader2,
   Plus,
@@ -53,6 +53,9 @@ export default function ChatPage() {
   const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Real Socket.IO Presence Tracking
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+
   // New Chat / Directory view state (Telegram/Signal style)
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [directoryUsers, setDirectoryUsers] = useState<Contact[]>([]);
@@ -60,6 +63,11 @@ export default function ChatPage() {
   const [directorySearchQuery, setDirectorySearchQuery] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeContactRef = useRef<Contact | null>(null);
+
+  useEffect(() => {
+    activeContactRef.current = activeContact;
+  }, [activeContact]);
 
   // 1. Initial Authentication & Load Active Conversations
   useEffect(() => {
@@ -96,6 +104,71 @@ export default function ChatPage() {
     // Connect real-time Socket.IO
     const socket = connectSocket();
     if (socket) {
+      // 1. Real-time online presence list
+      socket.on('users:online_list', (ids: string[]) => {
+        if (Array.isArray(ids)) {
+          setOnlineUserIds(new Set(ids));
+        }
+      });
+
+      // 2. Real-time presence change (online / offline)
+      socket.on('user:presence', (data: { userId: string; status: 'online' | 'offline' }) => {
+        if (!data || !data.userId) return;
+        setOnlineUserIds((prev) => {
+          const next = new Set(prev);
+          if (data.status === 'online') {
+            next.add(data.userId);
+          } else {
+            next.delete(data.userId);
+          }
+          return next;
+        });
+      });
+
+      // 3. Real-time message status updates (sent -> delivered -> read)
+      socket.on('message:status_updated', (data: { messageId?: string; conversationId?: string; status: 'sent' | 'delivered' | 'read' }) => {
+        if (!data || !data.status) return;
+
+        setMessagesMap((prev) => {
+          const updated = { ...prev };
+          let changed = false;
+          for (const key of Object.keys(updated)) {
+            updated[key] = updated[key].map((m) => {
+              if (data.messageId && m.id === data.messageId) {
+                changed = true;
+                return { ...m, status: data.status };
+              }
+              if (!data.messageId && data.conversationId && m.conversationId === data.conversationId) {
+                changed = true;
+                return { ...m, status: data.status };
+              }
+              return m;
+            });
+          }
+          return changed ? updated : prev;
+        });
+      });
+
+      // 4. Message delivery confirmation from server
+      socket.on('message:sent', (ack: { messageId: string; conversationId: string; status?: 'sent' | 'delivered' }) => {
+        if (!ack || !ack.messageId) return;
+        setMessagesMap((prev) => {
+          const updated = { ...prev };
+          let changed = false;
+          for (const key of Object.keys(updated)) {
+            updated[key] = updated[key].map((m) => {
+              if (m.id === ack.messageId) {
+                changed = true;
+                return { ...m, status: ack.status || 'sent' };
+              }
+              return m;
+            });
+          }
+          return changed ? updated : prev;
+        });
+      });
+
+      // 5. Incoming real-time message
       socket.on('message:received', (incoming: any) => {
         if (!incoming) return;
         const senderId = incoming.senderId || incoming.sender_id;
@@ -135,6 +208,22 @@ export default function ChatPage() {
           };
         });
 
+        // If recipient currently has active chat open with this sender, emit read receipt!
+        if (activeContactRef.current?.id === senderId) {
+          socket.emit('message:read', {
+            messageId: mapped.id,
+            senderId,
+            conversationId: mapped.conversationId,
+          });
+        } else {
+          // Acknowledge delivered to recipient's device
+          socket.emit('message:delivered', {
+            messageId: mapped.id,
+            senderId,
+            conversationId: mapped.conversationId,
+          });
+        }
+
         // Refresh conversation list so the new chat shows up immediately
         loadActiveConversations(parsedUser);
       });
@@ -169,7 +258,7 @@ export default function ChatPage() {
               role: 'user',
               status: 'active',
               avatarInitials: (conv.peer_username || 'U').slice(0, 2).toUpperCase(),
-              isOnline: true,
+              isOnline: false,
               publicKeyVersion: version,
               fingerprint,
             };
@@ -242,7 +331,7 @@ export default function ChatPage() {
               role: u.role || 'user',
               status: u.status || 'active',
               avatarInitials: (u.username || 'U').slice(0, 2).toUpperCase(),
-              isOnline: true,
+              isOnline: false,
               publicKeyVersion: version,
               fingerprint,
             };
@@ -261,6 +350,15 @@ export default function ChatPage() {
     setActiveContact(contact);
     setIsNewChatModalOpen(false);
     setSearchQuery('');
+
+    // Emit read receipt to contact for this conversation
+    const socket = getSocket();
+    if (socket && socket.connected) {
+      socket.emit('message:read', {
+        senderId: contact.id,
+        conversationId: `conv-${contact.id}`,
+      });
+    }
   };
 
   // Load messages when activeContact changes
@@ -305,7 +403,7 @@ export default function ChatPage() {
                 iv: m.initialization_vector,
                 macTag: m.mac_tag,
                 timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                status: 'delivered',
+                status: m.delivery_status || 'delivered',
               };
             });
 
@@ -365,6 +463,12 @@ export default function ChatPage() {
       cipherBase64 = btoa(encodeURIComponent(textToSend)).slice(0, 24) + '==';
     }
 
+    // Determine initial status based on real recipient presence:
+    // If recipient is currently online: 'delivered' (double checkmark gray)
+    // If recipient is offline: 'sent' (single checkmark gray)
+    const isPeerOnline = onlineUserIds.has(activeContact.id);
+    const initialStatus: 'sent' | 'delivered' = isPeerOnline ? 'delivered' : 'sent';
+
     const newMsg: ChatMessage = {
       id: 'm-' + Date.now(),
       conversationId: `conv-${activeContact.id}`,
@@ -374,7 +478,7 @@ export default function ChatPage() {
       iv: ivBase64,
       macTag: macTagBase64,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'delivered',
+      status: initialStatus,
     };
 
     setMessagesMap((prev) => {
@@ -432,6 +536,8 @@ export default function ChatPage() {
       </div>
     );
   }
+
+  const isCurrentPeerOnline = activeContact ? onlineUserIds.has(activeContact.id) : false;
 
   return (
     <div className="flex-1 flex overflow-hidden h-[calc(100vh-57px)] bg-[#0b0f19]">
@@ -494,6 +600,7 @@ export default function ChatPage() {
               const contact = conv.contact;
               if (!contact) return null;
               const isSelected = activeContact?.id === contact.id;
+              const isPeerOnline = onlineUserIds.has(contact.id);
 
               return (
                 <button
@@ -509,8 +616,9 @@ export default function ChatPage() {
                     <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs">
                       {contact.avatarInitials}
                     </div>
-                    {contact.isOnline && (
-                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0b0f19]" />
+                    {/* Real-time online status dot */}
+                    {isPeerOnline && (
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0b0f19] animate-pulse" title="Online" />
                     )}
                   </div>
 
@@ -574,8 +682,13 @@ export default function ChatPage() {
             {/* Chat Header */}
             <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs">
-                  {activeContact.avatarInitials}
+                <div className="relative">
+                  <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs">
+                    {activeContact.avatarInitials}
+                  </div>
+                  {isCurrentPeerOnline && (
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0b0f19] animate-pulse" />
+                  )}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -586,6 +699,16 @@ export default function ChatPage() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
+                    {/* Accurate real-time online / offline indicator */}
+                    <span className="text-[10px] flex items-center gap-1 font-medium">
+                      <span className={`w-1.5 h-1.5 rounded-full ${isCurrentPeerOnline ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                      <span className={isCurrentPeerOnline ? 'text-emerald-400' : 'text-slate-500'}>
+                        {isCurrentPeerOnline ? 'Online' : 'Offline'}
+                      </span>
+                    </span>
+
+                    <span className="text-slate-600 text-[10px]">•</span>
+
                     <p className="text-[10px] text-slate-400 font-mono">
                       Safety Number: <span className="text-emerald-400">{activeContact.fingerprint.slice(0, 19)}...</span>
                     </p>
@@ -697,9 +820,29 @@ export default function ChatPage() {
                         <p className="break-words leading-relaxed">{msg.text}</p>
                       )}
 
-                      <div className="flex items-center justify-end gap-1 mt-1 text-[10px] opacity-70 font-mono">
+                      {/* Accurate Checkmark Indicators: Sent (1 check), Delivered (2 checks gray), Read (2 checks cyan) */}
+                      <div className="flex items-center justify-end gap-1 mt-1 text-[10px] opacity-80 font-mono">
                         <span>{msg.timestamp}</span>
-                        {isOwn && <CheckCheck className="w-3 h-3 text-white" />}
+                        {isOwn && (
+                          <span
+                            className="flex items-center ml-0.5"
+                            title={
+                              msg.status === 'read'
+                                ? 'Read by recipient'
+                                : msg.status === 'delivered'
+                                ? 'Delivered to recipient device'
+                                : 'Sent to server (Recipient offline / unread)'
+                            }
+                          >
+                            {msg.status === 'read' ? (
+                              <CheckCheck className="w-3.5 h-3.5 text-cyan-300" />
+                            ) : msg.status === 'delivered' ? (
+                              <CheckCheck className="w-3.5 h-3.5 text-white/90" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5 text-white/70" />
+                            )}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -806,28 +949,40 @@ export default function ChatPage() {
                   </p>
                 </div>
               ) : (
-                filteredDirectoryUsers.map((user) => (
-                  <button
-                    key={user.id}
-                    onClick={() => handleSelectContact(user)}
-                    className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-800/60 transition-colors text-left group"
-                  >
-                    <div className="w-9 h-9 rounded-full bg-slate-800 group-hover:bg-emerald-950/60 border border-slate-700 group-hover:border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs transition-colors">
-                      {user.avatarInitials}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-xs text-white group-hover:text-emerald-300 transition-colors truncate">
-                          {user.displayName}
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-mono text-[9px] border border-emerald-900">
-                          E2EE Ready
-                        </span>
+                filteredDirectoryUsers.map((user) => {
+                  const isPeerOnline = onlineUserIds.has(user.id);
+                  return (
+                    <button
+                      key={user.id}
+                      onClick={() => handleSelectContact(user)}
+                      className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-800/60 transition-colors text-left group"
+                    >
+                      <div className="relative">
+                        <div className="w-9 h-9 rounded-full bg-slate-800 group-hover:bg-emerald-950/60 border border-slate-700 group-hover:border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs transition-colors">
+                          {user.avatarInitials}
+                        </div>
+                        {isPeerOnline && (
+                          <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-[#0b0f19] animate-pulse" />
+                        )}
                       </div>
-                      <p className="text-[11px] text-slate-400 font-mono">@{user.username}</p>
-                    </div>
-                  </button>
-                ))
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-xs text-white group-hover:text-emerald-300 transition-colors truncate">
+                            {user.displayName}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono text-[9px] border ${
+                            isPeerOnline
+                              ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
+                              : 'bg-slate-800 text-slate-400 border-slate-700'
+                          }`}>
+                            {isPeerOnline ? 'Online' : 'Offline'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-mono">@{user.username}</p>
+                      </div>
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>
