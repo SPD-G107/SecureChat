@@ -869,7 +869,7 @@ export default function ChatPage() {
 
                 {/* Public-Key Verification Link */}
                 <Link
-                  href="/verify-key"
+                  href={`/verify-key?user=${activeContact.username}`}
                   className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition-colors font-medium"
                   title="Verify Safety Key"
                 >
