@@ -98,6 +98,26 @@ export class CryptoEngine {
   }
 
   /**
+   * Computes a Signal/WhatsApp-style mutual pairwise Safety Number between two users.
+   * By sorting both fingerprints lexicographically and hashing them together with SHA-256,
+   * the resulting safety number is MATHEMATICALLY IDENTICAL on both users' devices!
+   */
+  static async computeMutualSafetyNumber(fpA: string, fpB: string): Promise<string> {
+    if (!fpA || !fpB) return '';
+    const cleanA = fpA.replace(/\s+/g, '').toLowerCase();
+    const cleanB = fpB.replace(/\s+/g, '').toLowerCase();
+    const sortedCombined = [cleanA, cleanB].sort().join(':');
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(sortedCombined);
+    const hash = await window.crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hash));
+    const hex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+    return (hex.match(/.{1,4}/g) || []).join(' ').toUpperCase();
+  }
+
+  /**
    * Securely saves user's cryptographic identity keypair locally on device
    */
   static saveLocalIdentity(username: string, privateKeyBase64: string, publicKeyBase64: string, fingerprint: string) {
