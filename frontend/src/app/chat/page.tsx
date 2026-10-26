@@ -325,6 +325,15 @@ export default function ChatPage() {
         );
 
         setConversations(enriched);
+
+        // Auto-restore active conversation if previously selected before page reload
+        const savedPeerId = localStorage.getItem(`securechat_active_peer_${user.id}`);
+        if (savedPeerId) {
+          const found = enriched.find((c) => c.peer_id === savedPeerId);
+          if (found && found.contact) {
+            setActiveContact(found.contact);
+          }
+        }
       }
     } catch (err: any) {
       if (err?.message?.includes('401') || err?.message?.includes('denied') || err?.message?.includes('Invalid')) {
@@ -386,6 +395,9 @@ export default function ChatPage() {
     setActiveContact(contact);
     setIsNewChatModalOpen(false);
     setSearchQuery('');
+    if (currentUser?.id) {
+      localStorage.setItem(`securechat_active_peer_${currentUser.id}`, contact.id);
+    }
 
     // Emit read receipt to contact for this conversation
     const socket = getSocket();
@@ -752,7 +764,12 @@ export default function ChatPage() {
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 {/* Mobile Back Button (Returns to conversations list) */}
                 <button
-                  onClick={() => setActiveContact(null)}
+                  onClick={() => {
+                    setActiveContact(null);
+                    if (currentUser?.id) {
+                      localStorage.removeItem(`securechat_active_peer_${currentUser.id}`);
+                    }
+                  }}
                   className="md:hidden p-1.5 -ml-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
                   title="Back to Chats"
                 >
