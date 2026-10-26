@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ApiClient } from '@/lib/api-client';
 import {
   Search,
@@ -9,21 +9,34 @@ import {
   AlertCircle,
   Copy,
   Check,
+  Loader2,
 } from 'lucide-react';
-import { MOCK_CONTACTS, CURRENT_USER } from '@/lib/mock-data';
 
 export default function VerifyKeyPage() {
-  const [searchUsername, setSearchUsername] = useState('bob');
-  const [keyData, setKeyData] = useState<any | null>({
-    username: 'bob',
-    version: 2,
-    fingerprint: '5420 1893 1200 1924 8192 1092 4819 2048 1920 1924 8192 0192 8410 2948 1924',
-    isMock: true,
-  });
+  const [searchUsername, setSearchUsername] = useState('');
+  const [keyData, setKeyData] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [recentUsers, setRecentUsers] = useState<string[]>([]);
+
+  // Load real registered users from MySQL on mount
+  useEffect(() => {
+    ApiClient.get('/users/search')
+      .then((res) => {
+        if (res && Array.isArray(res.users)) {
+          const names = res.users.map((u: any) => u.username);
+          setRecentUsers(names);
+          // Auto-select first contact if available
+          if (names.length > 0) {
+            setSearchUsername(names[0]);
+            performLookup(names[0]);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const performLookup = async (usernameToFind: string) => {
     const q = usernameToFind.trim().toLowerCase().replace(/^@/, '');
@@ -37,24 +50,24 @@ export default function VerifyKeyPage() {
       const searchRes = await ApiClient.get(`/users/search?q=${encodeURIComponent(q)}`);
       const found = searchRes.users?.find((u: any) => u.username.toLowerCase() === q);
 
-      if (!found) throw new Error(`Contact @${q} not found`);
-
-      const keyRes = await ApiClient.get(`/users/${found.id}/public-key`);
-      setKeyData({ ...keyRes, username: found.username });
-    } catch {
-      // Fallback to mock data for Phase 2 UI evaluation
-      const allMock = [CURRENT_USER, ...MOCK_CONTACTS];
-      const mockFound = allMock.find((u) => u.username.toLowerCase() === q);
-      if (mockFound) {
-        setKeyData({
-          username: mockFound.username,
-          version: mockFound.publicKeyVersion,
-          fingerprint: mockFound.fingerprint,
-          isMock: true,
-        });
-      } else {
-        setError(`Contact @${q} not found in registered keys`);
+      if (!found) {
+        throw new Error(`Contact @${q} was not found in the live user directory.`);
       }
+
+      const keyRes = await ApiClient.get(`/keys/${found.id}`);
+      if (!keyRes || !keyRes.fingerprint) {
+        throw new Error(`No cryptographic public key registered for @${q}.`);
+      }
+
+      setKeyData({
+        userId: found.id,
+        username: found.username,
+        version: keyRes.version || 1,
+        fingerprint: keyRes.fingerprint,
+        publicKey: keyRes.publicKey,
+      });
+    } catch (err: any) {
+      setError(err.message || `Failed to retrieve public key for @${q}.`);
     } finally {
       setLoading(false);
     }
@@ -77,10 +90,10 @@ export default function VerifyKeyPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white flex items-center gap-2.5">
           <KeyRound className="w-6 h-6 text-emerald-400" />
-          Public-Key Verification & Fingerprints
+          Public-Key Verification & Safety Numbers
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Verify cryptographic fingerprints out-of-band to prevent Man-in-the-Middle (MITM) attacks.
+          Verify cryptographic SHA-256 fingerprints out-of-band to prevent Man-in-the-Middle (MITM) attacks.
         </p>
       </div>
 
@@ -90,7 +103,7 @@ export default function VerifyKeyPage() {
             <Search className="w-4 h-4 text-emerald-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search contact username (e.g. bob, charlie, admin)"
+              placeholder="Search contact username (e.g. alice, bob, charlie, admin)"
               value={searchUsername}
               onChange={(e) => setSearchUsername(e.target.value)}
               className="w-full bg-slate-950/70 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 transition-colors"
@@ -98,30 +111,37 @@ export default function VerifyKeyPage() {
           </div>
           <button
             type="submit"
-            disabled={loading}
-            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm rounded-xl transition-colors disabled:opacity-60 shadow-md shadow-emerald-950/30"
+            disabled={loading || !searchUsername.trim()}
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm rounded-xl transition-colors disabled:opacity-60 shadow-md shadow-emerald-950/30 flex items-center gap-2"
           >
-            {loading ? 'Searching...' : 'Lookup Key'}
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            <span>{loading ? 'Searching...' : 'Lookup Key'}</span>
           </button>
         </form>
 
-        {/* Quick select test contacts for UI evaluation */}
-        <div className="flex items-center gap-2 mb-6 text-xs text-slate-400 flex-wrap">
-          <span className="text-[11px] text-slate-400">Quick test:</span>
-          {['bob', 'charlie', 'admin', 'alice'].map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => {
-                setSearchUsername(name);
-                performLookup(name);
-              }}
-              className="px-3 py-1 rounded-lg bg-slate-800/80 hover:bg-emerald-950 hover:text-emerald-300 border border-slate-700/60 font-mono text-[11px] transition-colors"
-            >
-              @{name}
-            </button>
-          ))}
-        </div>
+        {/* Real registered contacts quick-select */}
+        {recentUsers.length > 0 && (
+          <div className="flex items-center gap-2 mb-6 text-xs text-slate-400 flex-wrap">
+            <span className="text-[11px] text-slate-400">Registered users:</span>
+            {recentUsers.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => {
+                  setSearchUsername(name);
+                  performLookup(name);
+                }}
+                className={`px-3 py-1 rounded-lg border font-mono text-[11px] transition-colors ${
+                  keyData?.username === name
+                    ? 'bg-emerald-950 text-emerald-300 border-emerald-600'
+                    : 'bg-slate-800/80 hover:bg-emerald-950 hover:text-emerald-300 border-slate-700/60'
+                }`}
+              >
+                @{name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {error && (
           <div className="p-3 mb-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">

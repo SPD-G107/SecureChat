@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { KeyRound, Shield, RefreshCw, CheckCircle, AlertCircle, Copy, Check } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
-import { CURRENT_USER } from '@/lib/mock-data';
+import { User } from '@/types';
 
 export default function SettingsPage() {
-  const [currentUser, setCurrentUser] = useState<any>(CURRENT_USER);
+  const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [keyVersion, setKeyVersion] = useState<number>(1);
   const [fingerprint, setFingerprint] = useState<string>('');
   const [isRotating, setIsRotating] = useState(false);
@@ -16,19 +18,37 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const raw = localStorage.getItem('securechat_user');
-    if (raw) {
-      try {
-        const u = JSON.parse(raw);
-        setCurrentUser(u);
-        setKeyVersion(u.publicKeyVersion || 1);
-        setFingerprint(u.fingerprint || CURRENT_USER.fingerprint);
-      } catch {}
-    } else {
-      setFingerprint(CURRENT_USER.fingerprint);
+    const token = localStorage.getItem('securechat_jwt');
+
+    if (!raw || !token) {
+      router.replace('/login');
+      return;
     }
-  }, []);
+
+    try {
+      const u = JSON.parse(raw);
+      setCurrentUser(u);
+      setKeyVersion(u.publicKeyVersion || 1);
+      if (u.fingerprint) {
+        setFingerprint(u.fingerprint);
+      } else {
+        // Query server for latest public key
+        ApiClient.get(`/keys/${u.id}`)
+          .then((res) => {
+            if (res && res.fingerprint) {
+              setFingerprint(res.fingerprint);
+              setKeyVersion(res.version || 1);
+            }
+          })
+          .catch(() => {});
+      }
+    } catch {
+      router.replace('/login');
+    }
+  }, [router]);
 
   const handleRotateKey = async () => {
+    if (!currentUser) return;
     setIsRotating(true);
     setStatusMsg(null);
 
@@ -47,14 +67,10 @@ export default function SettingsPage() {
 
       // 4. Publish to backend server
       const newVersion = keyVersion + 1;
-      try {
-        await ApiClient.post('/keys/publish', {
-          publicKey: pubKey,
-          fingerprint: formattedFingerprint,
-        });
-      } catch {
-        // Dev offline fallback mode
-      }
+      await ApiClient.post('/keys/publish', {
+        publicKey: pubKey,
+        fingerprint: formattedFingerprint,
+      });
 
       // 5. Update local state
       const updatedUser = {
