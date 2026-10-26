@@ -131,7 +131,7 @@ export default function SettingsPage() {
       )}
 
       <div className="bg-slate-900/80 border border-emerald-950 rounded-2xl p-6 shadow-xl space-y-6">
-        <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-4">
+        <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-sm font-semibold text-white">Rotate Cryptographic Identity Key</h3>
@@ -146,7 +146,7 @@ export default function SettingsPage() {
           <button
             onClick={handleRotateKey}
             disabled={isRotating}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50 shrink-0 shadow-md shadow-emerald-950/40"
+            className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shrink-0 shadow-md shadow-emerald-950/40"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRotating ? 'animate-spin' : ''}`} />
             {isRotating ? 'Generating...' : 'Rotate Key'}

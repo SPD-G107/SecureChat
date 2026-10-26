@@ -23,6 +23,7 @@ import {
   Plus,
   MessageSquarePlus,
   X,
+  ArrowLeft,
 } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
@@ -609,7 +610,7 @@ export default function ChatPage() {
   return (
     <div className="flex-1 flex overflow-hidden h-[calc(100vh-57px)] bg-[#0b0f19]">
       {/* Sidebar: Active Conversations (Telegram / Signal style) */}
-      <aside className="w-80 bg-slate-900/40 border-r border-slate-800 flex flex-col shrink-0">
+      <aside className={`${activeContact ? 'hidden md:flex' : 'flex'} w-full md:w-80 bg-slate-900/40 border-r border-slate-800 flex-col shrink-0`}>
         {/* Sidebar Header & Start New Chat Button */}
         <div className="p-3.5 border-b border-slate-800">
           <div className="flex items-center justify-between mb-2.5">
@@ -743,45 +744,62 @@ export default function ChatPage() {
       </aside>
 
       {/* Main Chat Workspace */}
-      <section className="flex-1 flex flex-col bg-[#0b0f19]">
+      <section className={`${!activeContact ? 'hidden md:flex' : 'flex'} flex-1 flex-col bg-[#0b0f19] min-w-0`}>
         {activeContact ? (
           <>
             {/* Chat Header */}
-            <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs">
+            <div className="px-3 sm:px-6 py-2.5 sm:py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                {/* Mobile Back Button (Returns to conversations list) */}
+                <button
+                  onClick={() => setActiveContact(null)}
+                  className="md:hidden p-1.5 -ml-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+                  title="Back to Chats"
+                >
+                  <ArrowLeft className="w-5 h-5 text-emerald-400" />
+                </button>
+
+                <div className="relative shrink-0">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs">
                     {activeContact.avatarInitials}
                   </div>
                   {isCurrentPeerOnline && (
                     <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0b0f19] animate-pulse" />
                   )}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-bold text-white">{activeContact.displayName}</h2>
-                    <span className="text-slate-400 text-xs font-normal">(@{activeContact.username})</span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800 text-[10px] font-mono">
-                      <ShieldCheck className="w-3 h-3" /> E2EE Active
+
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <h2 className="text-xs sm:text-sm font-bold text-white truncate max-w-[110px] sm:max-w-[200px]">
+                      {activeContact.displayName}
+                    </h2>
+                    <span className="text-slate-400 text-[11px] sm:text-xs font-normal hidden sm:inline">
+                      (@{activeContact.username})
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800 text-[9px] sm:text-[10px] font-mono shrink-0">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span className="hidden sm:inline">E2EE Active</span>
+                      <span className="sm:hidden">E2EE</span>
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 mt-0.5">
+
+                  <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5">
                     {/* Accurate real-time online / offline indicator */}
-                    <span className="text-[10px] flex items-center gap-1 font-medium">
+                    <span className="text-[10px] flex items-center gap-1 font-medium shrink-0">
                       <span className={`w-1.5 h-1.5 rounded-full ${isCurrentPeerOnline ? 'bg-emerald-400' : 'bg-slate-500'}`} />
                       <span className={isCurrentPeerOnline ? 'text-emerald-400' : 'text-slate-500'}>
                         {isCurrentPeerOnline ? 'Online' : 'Offline'}
                       </span>
                     </span>
 
-                    <span className="text-slate-600 text-[10px]">•</span>
+                    <span className="text-slate-600 text-[10px] hidden sm:inline">•</span>
 
-                    <p className="text-[10px] text-slate-400 font-mono">
-                      Safety Number: <span className="text-emerald-400">{activeContact.fingerprint.slice(0, 19)}...</span>
+                    <p className="text-[10px] text-slate-400 font-mono hidden sm:block">
+                      Safety: <span className="text-emerald-400">{activeContact.fingerprint.slice(0, 15)}...</span>
                     </p>
                     <button
                       onClick={handleCopySafetyNumber}
-                      className="text-[10px] text-slate-400 hover:text-white"
+                      className="text-[10px] text-slate-400 hover:text-white hidden sm:block"
                       title="Copy safety number"
                     >
                       {copiedFingerprint ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
@@ -790,27 +808,29 @@ export default function ChatPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 {/* Ciphertext / Plaintext Toggle */}
                 <button
                   onClick={() => setShowCiphertext(!showCiphertext)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                  className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
                     showCiphertext
                       ? 'bg-emerald-600 text-white border-emerald-500'
                       : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white'
                   }`}
+                  title={showCiphertext ? 'Show Plaintext' : 'Inspect Ciphertext'}
                 >
                   {showCiphertext ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 text-emerald-400" />}
-                  <span>{showCiphertext ? 'Show Plaintext' : 'Inspect Ciphertext'}</span>
+                  <span className="hidden sm:inline">{showCiphertext ? 'Plaintext' : 'Ciphertext'}</span>
                 </button>
 
                 {/* Public-Key Verification Link */}
                 <Link
                   href="/verify-key"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition-colors font-medium"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition-colors font-medium"
+                  title="Verify Safety Key"
                 >
                   <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Verify Key</span>
+                  <span className="hidden sm:inline">Verify</span>
                 </Link>
               </div>
             </div>
@@ -842,7 +862,7 @@ export default function ChatPage() {
             )}
 
             {/* Message Feed */}
-            <div className="flex-1 p-6 overflow-y-auto space-y-3">
+            <div className="flex-1 p-3.5 sm:p-6 overflow-y-auto space-y-2.5 sm:space-y-3">
               <div className="text-center my-2">
                 <span className="px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-[10px] text-slate-400 font-mono inline-flex items-center gap-1.5">
                   <Lock className="w-3 h-3 text-emerald-400" /> Messages are end-to-end encrypted (AES-256-GCM). Zero server plaintext.
@@ -858,7 +878,7 @@ export default function ChatPage() {
                     className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}
                   >
                     <div
-                      className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm ${
+                      className={`max-w-[85%] sm:max-w-[70%] px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-sm ${
                         isOwn
                           ? 'bg-emerald-600 text-white rounded-br-sm shadow-sm'
                           : 'bg-slate-900 border border-slate-800 text-slate-100 rounded-bl-sm shadow-sm'
@@ -884,7 +904,7 @@ export default function ChatPage() {
                           )}
                         </div>
                       ) : (
-                        <p className="break-words leading-relaxed">{msg.text}</p>
+                        <p className="break-words leading-relaxed text-xs sm:text-sm">{msg.text}</p>
                       )}
 
                       {/* Accurate Checkmark Indicators: Sent (1 check), Delivered (2 checks gray), Read (2 checks cyan) */}
@@ -922,19 +942,19 @@ export default function ChatPage() {
             {/* Clean Input Bar */}
             <form
               onSubmit={handleSendMessage}
-              className="p-3.5 border-t border-slate-800 bg-slate-900/40 flex gap-2.5 items-center"
+              className="p-2.5 sm:p-3.5 border-t border-slate-800 bg-slate-900/40 flex gap-2 sm:gap-2.5 items-center"
             >
               <input
                 type="text"
                 placeholder={`Message @${activeContact.username}...`}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                className="flex-1 bg-slate-950/70 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                className="flex-1 bg-slate-950/70 border border-slate-800 rounded-xl px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
               />
               <button
                 type="submit"
                 disabled={!inputText.trim()}
-                className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-40"
+                className="p-2 sm:p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-40 shrink-0"
               >
                 <Send className="w-4 h-4" />
               </button>

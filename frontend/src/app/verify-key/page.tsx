@@ -98,7 +98,7 @@ export default function VerifyKeyPage() {
       </div>
 
       <div className="bg-slate-900/80 border border-emerald-950 rounded-2xl p-6 shadow-xl mb-6">
-        <form onSubmit={handleLookup} className="flex gap-3 mb-4">
+        <form onSubmit={handleLookup} className="flex flex-col sm:flex-row gap-3 mb-4">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-emerald-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
@@ -112,7 +112,7 @@ export default function VerifyKeyPage() {
           <button
             type="submit"
             disabled={loading || !searchUsername.trim()}
-            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm rounded-xl transition-colors disabled:opacity-60 shadow-md shadow-emerald-950/30 flex items-center gap-2"
+            className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm rounded-xl transition-colors disabled:opacity-60 shadow-md shadow-emerald-950/30 flex items-center justify-center gap-2"
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             <span>{loading ? 'Searching...' : 'Lookup Key'}</span>
