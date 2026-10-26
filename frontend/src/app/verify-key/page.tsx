@@ -115,6 +115,16 @@ export default function VerifyKeyPage() {
         mutual = await CryptoEngine.computeMutualSafetyNumber(myFp, keyRes.fingerprint);
       }
 
+      // Check if previously marked as verified in LocalStorage
+      let verifiedStatus = false;
+      if (typeof window !== 'undefined' && activeUsr?.id) {
+        const savedFp = localStorage.getItem(`securechat_verified_${activeUsr.id}_${found.id}`);
+        if (savedFp && savedFp === keyRes.fingerprint) {
+          verifiedStatus = true;
+        }
+      }
+      setIsVerified(verifiedStatus);
+
       setMutualSafetyNumber(mutual);
       setKeyData({
         userId: found.id,
@@ -127,6 +137,17 @@ export default function VerifyKeyPage() {
       setError(err.message || `Failed to retrieve public key for @${q}.`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleVerify = () => {
+    if (!keyData || !currentUser?.id) return;
+    const nextStatus = !isVerified;
+    setIsVerified(nextStatus);
+    if (nextStatus) {
+      localStorage.setItem(`securechat_verified_${currentUser.id}_${keyData.userId}`, keyData.fingerprint);
+    } else {
+      localStorage.removeItem(`securechat_verified_${currentUser.id}_${keyData.userId}`);
     }
   };
 
@@ -256,7 +277,7 @@ export default function VerifyKeyPage() {
                 </button>
 
                 <button
-                  onClick={() => setIsVerified((v) => !v)}
+                  onClick={handleToggleVerify}
                   className={`px-5 py-2 text-xs font-semibold rounded-xl transition-all flex items-center gap-2 ${
                     isVerified
                       ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30'
