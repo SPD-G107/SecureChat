@@ -12,6 +12,7 @@ import {
   Settings,
   LogIn,
   UserPlus,
+  Download,
 } from 'lucide-react';
 import { ApiClient } from '@/lib/api-client';
 
@@ -20,6 +21,7 @@ export default function Navbar() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   const syncAuth = () => {
     if (typeof window === 'undefined') return;
@@ -64,11 +66,31 @@ export default function Navbar() {
     window.addEventListener('storage', handleAuthChange);
     window.addEventListener('securechat_auth', handleAuthChange);
 
+    const handlePwaInstallable = (e: any) => {
+      setInstallPrompt(e.detail);
+    };
+    const handlePwaInstalled = () => {
+      setInstallPrompt(null);
+    };
+    window.addEventListener('securechat_pwa_installable', handlePwaInstallable);
+    window.addEventListener('securechat_pwa_installed', handlePwaInstalled);
+
     return () => {
       window.removeEventListener('storage', handleAuthChange);
       window.removeEventListener('securechat_auth', handleAuthChange);
+      window.removeEventListener('securechat_pwa_installable', handlePwaInstallable);
+      window.removeEventListener('securechat_pwa_installed', handlePwaInstalled);
     };
   }, [pathname]);
+
+  const handleInstallApp = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -167,6 +189,18 @@ export default function Navbar() {
             <Shield className="w-3.5 h-3.5 text-purple-400" />
             <span className="hidden sm:inline">Admin</span>
           </Link>
+        )}
+
+        {/* PWA Install Button when Chrome/Edge is installable */}
+        {installPrompt && (
+          <button
+            onClick={handleInstallApp}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition-all shadow-sm shadow-emerald-950/40 animate-pulse"
+            title="Install SecureChat as Desktop App on Chrome / Edge"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Install App</span>
+          </button>
         )}
 
         {/* Dynamic User Authentication State */}
