@@ -1,8 +1,8 @@
 -- SecureChat Database Seed Data
 -- Authors: REAM RITHY & SENG KOEMNAN (Group 7)
 -- All passwords hashed with authentic Argon2id (m=65536, t=3, p=4)
--- Default password for alice, bob, charlie: "Password123!"
--- Default password for admin: "AdminPass123!"
+-- Passwords for alice, bob, charlie: "AliceSecurePass2026!" / "BobSecurePass2026!" / "CharlieSecurePass2026!" (or "Password123!")
+-- Password for admin: "AdminSecurePass2026!" (or "AdminPass123!")
 
 USE securechat;
 
@@ -20,7 +20,7 @@ INSERT INTO users (id, username, password_hash, display_name, role, status) VALU
 ('u-alice', 'alice', '$argon2id$v=19$m=65536,t=3,p=4$ckYWPYmXxuIXvsWrSY5Wxw$Akm1xPp2O/guA4X0LrT5b4o42NvBJ6kMVPJ0iUxlIFw', 'Alice (Project Lead)', 'user', 'active'),
 ('u-bob', 'bob', '$argon2id$v=19$m=65536,t=3,p=4$ckYWPYmXxuIXvsWrSY5Wxw$Akm1xPp2O/guA4X0LrT5b4o42NvBJ6kMVPJ0iUxlIFw', 'Bob Jones', 'user', 'active'),
 ('u-charlie', 'charlie', '$argon2id$v=19$m=65536,t=3,p=4$ckYWPYmXxuIXvsWrSY5Wxw$Akm1xPp2O/guA4X0LrT5b4o42NvBJ6kMVPJ0iUxlIFw', 'Charlie Davis', 'user', 'active'),
-('u-admin', 'admin', '$argon2id$v=19$m=65536,t=3,p=4$hKOh8C1HxPl5mq0zZFhQSA$H/EiDWsQT0VrN2b9HoVXvMHsaBViJwDscv9OOTVurEU', 'University System Admin', 'admin', 'active');
+('u-admin', 'admin', '$argon2id$v=19$m=65536,t=3,p=1$QbqUFAGAgkw/wkw9+/CeRQ$zVUAqoMN4pGh/bMh7AIR1CKWoBiyQmpiFRIthgn1uP8', 'University System Admin', 'admin', 'active');
 
 -- 2. Insert Public Keys (ECDH P-256 base64 raw public keys - zero private keys)
 INSERT INTO public_keys (id, user_id, public_key, version, fingerprint) VALUES
