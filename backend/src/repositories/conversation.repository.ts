@@ -58,12 +58,14 @@ export class ConversationRepository {
     iv: string;
     macTag: string;
     ephemeralPublicKey?: string;
+    deliveryStatus?: 'sent' | 'delivered' | 'read';
   }): Promise<MessageRecord> {
     const id = uuidv4();
+    const status = data.deliveryStatus || 'sent';
     await query(
-      `INSERT INTO messages (id, conversation_id, sender_id, encrypted_payload, initialization_vector, mac_tag, ephemeral_public_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, data.conversationId, data.senderId, data.encryptedPayload, data.iv, data.macTag, data.ephemeralPublicKey || null]
+      `INSERT INTO messages (id, conversation_id, sender_id, encrypted_payload, initialization_vector, mac_tag, ephemeral_public_key, delivery_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, data.conversationId, data.senderId, data.encryptedPayload, data.iv, data.macTag, data.ephemeralPublicKey || null, status]
     );
 
     // Update conversation timestamp
@@ -83,5 +85,41 @@ export class ConversationRepository {
       [conversationId, limit]
     );
     return rows;
+  }
+
+  static async updateMessageStatus(messageId: string, status: 'sent' | 'delivered' | 'read'): Promise<void> {
+    await query('UPDATE messages SET delivery_status = ? WHERE id = ?', [status, messageId]);
+  }
+
+  static async markConversationAsRead(conversationId: string, readerId: string): Promise<void> {
+    await query(
+      'UPDATE messages SET delivery_status = "read" WHERE conversation_id = ? AND sender_id != ?',
+      [conversationId, readerId]
+    );
+  }
+
+  static async markConversationAsDelivered(conversationId: string, recipientId: string): Promise<void> {
+    await query(
+      'UPDATE messages SET delivery_status = "delivered" WHERE conversation_id = ? AND sender_id != ? AND delivery_status = "sent"',
+      [conversationId, recipientId]
+    );
+  }
+
+  static async markMessagesAsReadBetween(readerId: string, senderId: string): Promise<string | null> {
+    const conv = await this.findOrCreateConversation(readerId, senderId);
+    if (conv) {
+      await this.markConversationAsRead(conv.id, readerId);
+      return conv.id;
+    }
+    return null;
+  }
+
+  static async markMessagesAsDeliveredBetween(recipientId: string, senderId: string): Promise<string | null> {
+    const conv = await this.findOrCreateConversation(recipientId, senderId);
+    if (conv) {
+      await this.markConversationAsDelivered(conv.id, recipientId);
+      return conv.id;
+    }
+    return null;
   }
 }

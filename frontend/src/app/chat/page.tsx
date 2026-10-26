@@ -126,43 +126,75 @@ export default function ChatPage() {
       });
 
       // 3. Real-time message status updates (sent -> delivered -> read)
-      socket.on('message:status_updated', (data: { messageId?: string; conversationId?: string; status: 'sent' | 'delivered' | 'read' }) => {
+      socket.on('message:status_updated', (data: { messageId?: string; conversationId?: string; peerId?: string; status: 'sent' | 'delivered' | 'read' }) => {
         if (!data || !data.status) return;
 
         setMessagesMap((prev) => {
           const updated = { ...prev };
           let changed = false;
           for (const key of Object.keys(updated)) {
-            updated[key] = updated[key].map((m) => {
-              if (data.messageId && m.id === data.messageId) {
-                changed = true;
-                return { ...m, status: data.status };
+            const isRelevantChat = !data.peerId || data.peerId === key;
+            if (isRelevantChat) {
+              const prevMsgs = updated[key];
+              const newMsgs = prevMsgs.map((m) => {
+                const matchId = Boolean(data.messageId && m.id === data.messageId);
+                const matchConv = Boolean(
+                  data.conversationId && (m.conversationId === data.conversationId || m.conversationId === `conv-${data.peerId}`)
+                );
+                const matchChat = Boolean(data.peerId && data.peerId === key && !data.messageId);
+                const isSentByMe = m.senderId === parsedUser?.id;
+
+                if ((matchId || matchConv || matchChat) && isSentByMe) {
+                  const statusWeight = { sent: 1, delivered: 2, read: 3 };
+                  const currentWeight = statusWeight[m.status] || 1;
+                  const newWeight = statusWeight[data.status] || 1;
+                  if (newWeight > currentWeight) {
+                    changed = true;
+                    return { ...m, status: data.status };
+                  }
+                }
+                return m;
+              });
+
+              if (changed) {
+                updated[key] = newMsgs;
+                if (parsedUser?.id) {
+                  localStorage.setItem(`securechat_msgs_${parsedUser.id}_${key}`, JSON.stringify(newMsgs));
+                }
               }
-              if (!data.messageId && data.conversationId && m.conversationId === data.conversationId) {
-                changed = true;
-                return { ...m, status: data.status };
-              }
-              return m;
-            });
+            }
           }
           return changed ? updated : prev;
         });
       });
 
       // 4. Message delivery confirmation from server
-      socket.on('message:sent', (ack: { messageId: string; conversationId: string; status?: 'sent' | 'delivered' }) => {
+      socket.on('message:sent', (ack: { clientTempId?: string; messageId: string; conversationId: string; status?: 'sent' | 'delivered' }) => {
         if (!ack || !ack.messageId) return;
         setMessagesMap((prev) => {
           const updated = { ...prev };
           let changed = false;
           for (const key of Object.keys(updated)) {
-            updated[key] = updated[key].map((m) => {
-              if (m.id === ack.messageId) {
+            const prevMsgs = updated[key];
+            const newMsgs = prevMsgs.map((m) => {
+              if ((ack.clientTempId && m.id === ack.clientTempId) || m.id === ack.messageId) {
                 changed = true;
-                return { ...m, status: ack.status || 'sent' };
+                return {
+                  ...m,
+                  id: ack.messageId,
+                  conversationId: ack.conversationId || m.conversationId,
+                  status: ack.status || m.status,
+                };
               }
               return m;
             });
+
+            if (changed) {
+              updated[key] = newMsgs;
+              if (parsedUser?.id) {
+                localStorage.setItem(`securechat_msgs_${parsedUser.id}_${key}`, JSON.stringify(newMsgs));
+              }
+            }
           }
           return changed ? updated : prev;
         });
@@ -215,6 +247,9 @@ export default function ChatPage() {
             senderId,
             conversationId: mapped.conversationId,
           });
+          if (mapped.conversationId && !mapped.conversationId.startsWith('conv-')) {
+            ApiClient.patch(`/messages/${mapped.conversationId}/read`).catch(() => {});
+          }
         } else {
           // Acknowledge delivered to recipient's device
           socket.emit('message:delivered', {
@@ -384,49 +419,67 @@ export default function ChatPage() {
     ApiClient.get('/conversations')
       .then(async (res) => {
         const conv = res.conversations?.find((c: any) => c.peer_id === activeContact.id);
-          if (conv) {
-            const msgRes = await ApiClient.get(`/messages/${conv.id}`);
-            if (msgRes && Array.isArray(msgRes.messages) && msgRes.messages.length > 0) {
-              const savedRaw = localStorage.getItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`);
-              const localSaved: ChatMessage[] = savedRaw ? JSON.parse(savedRaw) : [];
+        if (conv) {
+          // Immediately mark conversation as read in MySQL for incoming messages
+          ApiClient.patch(`/messages/${conv.id}/read`).catch(() => {});
 
-              const loadedMsgs: ChatMessage[] = msgRes.messages.map((m: any, idx: number) => {
-                const matchedLocal = localSaved.find(
-                  (loc) => loc.id === m.id || (loc.encryptedPreview && loc.encryptedPreview === m.encrypted_payload)
-                ) || localSaved[idx];
-
-                const displayText = matchedLocal?.text || (m.sender_id === currentUser.id ? 'Encrypted outgoing message' : 'Encrypted incoming message');
-
-                return {
-                  id: m.id,
-                  conversationId: m.conversation_id,
-                  senderId: m.sender_id,
-                  text: displayText,
-                  encryptedPreview: m.encrypted_payload,
-                  iv: m.initialization_vector,
-                  macTag: m.mac_tag,
-                  timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                  status: m.delivery_status || 'delivered',
-                };
-              });
-
-              // Keep local text cache prioritized over placeholder strings
-              const finalMsgs = localSaved.length > 0
-                ? localSaved.map((loc, i) => {
-                    const remote = loadedMsgs[i];
-                    return remote ? { ...remote, text: loc.text || remote.text } : loc;
-                  })
-                : loadedMsgs;
-
-              setMessagesMap((prev) => ({
-                ...prev,
-                [activeContact.id]: finalMsgs,
-              }));
-              localStorage.setItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`, JSON.stringify(finalMsgs));
-            }
+          // Emit read receipt via socket to update sender in real-time
+          const socket = getSocket();
+          if (socket && socket.connected) {
+            socket.emit('message:read', {
+              senderId: activeContact.id,
+              conversationId: conv.id,
+            });
           }
-        })
-        .catch(() => {});
+
+          const msgRes = await ApiClient.get(`/messages/${conv.id}`);
+          if (msgRes && Array.isArray(msgRes.messages) && msgRes.messages.length > 0) {
+            const savedRaw = localStorage.getItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`);
+            const localSaved: ChatMessage[] = savedRaw ? JSON.parse(savedRaw) : [];
+
+            const statusWeight = { sent: 1, delivered: 2, read: 3 };
+
+            const loadedMsgs: ChatMessage[] = msgRes.messages.map((m: any, idx: number) => {
+              const matchedLocal = localSaved.find(
+                (loc) => loc.id === m.id || (loc.encryptedPreview && loc.encryptedPreview === m.encrypted_payload)
+              ) || localSaved[idx];
+
+              const displayText = matchedLocal?.text || (m.sender_id === currentUser.id ? 'Encrypted outgoing message' : 'Encrypted incoming message');
+
+              const remoteStatus: 'sent' | 'delivered' | 'read' = m.delivery_status || 'delivered';
+              const localStatus: 'sent' | 'delivered' | 'read' = matchedLocal?.status || 'delivered';
+              const resolvedStatus = (statusWeight[remoteStatus] || 1) >= (statusWeight[localStatus] || 1) ? remoteStatus : localStatus;
+
+              return {
+                id: m.id,
+                conversationId: m.conversation_id,
+                senderId: m.sender_id,
+                text: displayText,
+                encryptedPreview: m.encrypted_payload,
+                iv: m.initialization_vector,
+                macTag: m.mac_tag,
+                timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: resolvedStatus,
+              };
+            });
+
+            // Reconcile: use loadedMsgs from MySQL with plaintext from localSaved
+            const finalMsgs = loadedMsgs.map((remote) => {
+              const loc = localSaved.find(
+                (l) => l.id === remote.id || (l.encryptedPreview && l.encryptedPreview === remote.encryptedPreview)
+              );
+              return loc ? { ...remote, text: loc.text || remote.text } : remote;
+            });
+
+            setMessagesMap((prev) => ({
+              ...prev,
+              [activeContact.id]: finalMsgs,
+            }));
+            localStorage.setItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`, JSON.stringify(finalMsgs));
+          }
+        }
+      })
+      .catch(() => {});
   }, [activeContact?.id, currentUser?.id]);
 
   useEffect(() => {
@@ -481,8 +534,9 @@ export default function ChatPage() {
     const isPeerOnline = onlineUserIds.has(activeContact.id);
     const initialStatus: 'sent' | 'delivered' = isPeerOnline ? 'delivered' : 'sent';
 
+    const tempId = 'm-' + Date.now();
     const newMsg: ChatMessage = {
-      id: 'm-' + Date.now(),
+      id: tempId,
       conversationId: `conv-${activeContact.id}`,
       senderId: currentUser.id,
       text: textToSend,
@@ -512,6 +566,7 @@ export default function ChatPage() {
     const socket = getSocket();
     if (socket && socket.connected) {
       socket.emit('message:send', {
+        clientTempId: tempId,
         conversationId: `conv-${activeContact.id}`,
         recipientId: activeContact.id,
         plaintext: textToSend,

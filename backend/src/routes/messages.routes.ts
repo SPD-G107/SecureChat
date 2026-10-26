@@ -24,4 +24,15 @@ router.get('/:conversationId', async (req: AuthenticatedRequest, res: Response):
   }
 });
 
+// Mark messages in a conversation as read
+router.patch('/:conversationId/read', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { conversationId } = req.params;
+    await ConversationRepository.markConversationAsRead(conversationId, req.user!.userId);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to mark messages as read' });
+  }
+});
+
 export default router;

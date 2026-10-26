@@ -55,6 +55,7 @@ export const setupChatSockets = (io: Server) => {
     socket.emit('users:online_list', Array.from(onlineUsers.keys()));
 
     socket.on('message:send', async (data: {
+      clientTempId?: string;
       conversationId?: string;
       recipientId: string;
       plaintext?: string;
@@ -64,7 +65,7 @@ export const setupChatSockets = (io: Server) => {
       ephemeralPublicKey?: string;
     }) => {
       try {
-        const { recipientId, encryptedPayload, iv, macTag, ephemeralPublicKey, plaintext } = data;
+        const { recipientId, encryptedPayload, iv, macTag, ephemeralPublicKey, plaintext, clientTempId } = data;
         let targetConvId = data.conversationId;
 
         // Verify or auto-create conversation between sender and recipient
@@ -77,7 +78,7 @@ export const setupChatSockets = (io: Server) => {
         // Check if recipient is currently online in real-time
         const recipientRoom = io.sockets.adapter.rooms.get(`user:${recipientId}`);
         const isRecipientConnected = (recipientRoom?.size ?? 0) > 0;
-        const initialStatus = isRecipientConnected ? 'delivered' : 'sent';
+        const initialStatus: 'sent' | 'delivered' = isRecipientConnected ? 'delivered' : 'sent';
 
         // Store encrypted message in MySQL (zero plaintext saved in database)
         const saved = await ConversationRepository.saveEncryptedMessage({
@@ -87,6 +88,7 @@ export const setupChatSockets = (io: Server) => {
           iv,
           macTag,
           ephemeralPublicKey,
+          deliveryStatus: initialStatus,
         });
 
         logger.info(`E2EE Ciphertext relayed from ${socket.user?.username} (${userId}) to ${recipientId} [Status: ${initialStatus}]`);
@@ -111,8 +113,9 @@ export const setupChatSockets = (io: Server) => {
           status: initialStatus,
         });
 
-        // Acknowledge delivery to sender with accurate status (sent vs delivered)
+        // Acknowledge delivery to sender with accurate status and correlation ID
         socket.emit('message:sent', {
+          clientTempId,
           messageId: saved.id,
           conversationId: targetConvId,
           status: initialStatus,
@@ -124,19 +127,51 @@ export const setupChatSockets = (io: Server) => {
     });
 
     // Handle delivery acknowledgment from recipient device
-    socket.on('message:delivered', (data: { messageId: string; senderId: string; conversationId: string }) => {
+    socket.on('message:delivered', async (data: { messageId?: string; senderId: string; conversationId?: string }) => {
+      let resolvedConvId = data.conversationId;
+      try {
+        if (data.messageId) {
+          await ConversationRepository.updateMessageStatus(data.messageId, 'delivered');
+        }
+        if (data.senderId) {
+          const cid = await ConversationRepository.markMessagesAsDeliveredBetween(userId, data.senderId);
+          if (cid) resolvedConvId = cid;
+        } else if (data.conversationId) {
+          await ConversationRepository.markConversationAsDelivered(data.conversationId, userId);
+        }
+      } catch (err: any) {
+        logger.error('Failed to persist delivered status in MySQL:', err.message);
+      }
+
       io.to(`user:${data.senderId}`).emit('message:status_updated', {
         messageId: data.messageId,
-        conversationId: data.conversationId,
+        conversationId: resolvedConvId,
+        peerId: userId,
         status: 'delivered',
       });
     });
 
     // Handle read receipt when recipient views/opens the message
-    socket.on('message:read', (data: { messageId?: string; senderId: string; conversationId: string }) => {
+    socket.on('message:read', async (data: { messageId?: string; senderId: string; conversationId?: string }) => {
+      let resolvedConvId = data.conversationId;
+      try {
+        if (data.messageId) {
+          await ConversationRepository.updateMessageStatus(data.messageId, 'read');
+        }
+        if (data.senderId) {
+          const cid = await ConversationRepository.markMessagesAsReadBetween(userId, data.senderId);
+          if (cid) resolvedConvId = cid;
+        } else if (data.conversationId) {
+          await ConversationRepository.markConversationAsRead(data.conversationId, userId);
+        }
+      } catch (err: any) {
+        logger.error('Failed to persist read status in MySQL:', err.message);
+      }
+
       io.to(`user:${data.senderId}`).emit('message:status_updated', {
         messageId: data.messageId,
-        conversationId: data.conversationId,
+        conversationId: resolvedConvId,
+        peerId: userId,
         status: 'read',
       });
     });
