@@ -53,6 +53,7 @@ export default function ChatPage() {
   const [copiedFingerprint, setCopiedFingerprint] = useState(false);
   const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
   // Real Socket.IO Presence Tracking
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -264,12 +265,17 @@ export default function ChatPage() {
             ApiClient.patch(`/messages/${mapped.conversationId}/read`).catch(() => {});
           }
         } else {
-          // Acknowledge delivered to recipient's device
+          // Acknowledge delivered to recipient's device (NOT read yet)
           socket.emit('message:delivered', {
             messageId: mapped.id,
             senderId,
             conversationId: mapped.conversationId,
           });
+          // Increment unread count badge for this sender
+          setUnreadCounts((prev) => ({
+            ...prev,
+            [senderId]: (prev[senderId] || 0) + 1,
+          }));
         }
 
         // Refresh conversation list so the new chat shows up immediately
@@ -338,22 +344,24 @@ export default function ChatPage() {
 
         setConversations(enriched);
 
-        // Auto-restore active conversation if previously selected before page reload
-        const savedPeerId = localStorage.getItem(`securechat_active_peer_${user.id}`);
-        if (savedPeerId) {
-          const found = enriched.find((c) => c.peer_id === savedPeerId);
-          if (found && found.contact) {
-            setActiveContact(found.contact);
-            localStorage.setItem(`securechat_active_peer_contact_${user.id}`, JSON.stringify(found.contact));
-          } else {
-            const savedContactStr = localStorage.getItem(`securechat_active_peer_contact_${user.id}`);
-            if (savedContactStr) {
-              try {
-                const parsedContact = JSON.parse(savedContactStr);
-                if (parsedContact && parsedContact.id === savedPeerId) {
-                  setActiveContact(parsedContact);
-                }
-              } catch {}
+        // Auto-restore active conversation if previously selected before page reload (only if not currently viewing a chat)
+        if (!activeContactRef.current) {
+          const savedPeerId = localStorage.getItem(`securechat_active_peer_${user.id}`);
+          if (savedPeerId) {
+            const found = enriched.find((c) => c.peer_id === savedPeerId);
+            if (found && found.contact) {
+              setActiveContact(found.contact);
+              localStorage.setItem(`securechat_active_peer_contact_${user.id}`, JSON.stringify(found.contact));
+            } else {
+              const savedContactStr = localStorage.getItem(`securechat_active_peer_contact_${user.id}`);
+              if (savedContactStr) {
+                try {
+                  const parsedContact = JSON.parse(savedContactStr);
+                  if (parsedContact && parsedContact.id === savedPeerId) {
+                    setActiveContact(parsedContact);
+                  }
+                } catch {}
+              }
             }
           }
         }
@@ -418,6 +426,7 @@ export default function ChatPage() {
     setActiveContact(contact);
     setIsNewChatModalOpen(false);
     setSearchQuery('');
+    setUnreadCounts((prev) => ({ ...prev, [contact.id]: 0 }));
     if (currentUser?.id) {
       localStorage.setItem(`securechat_active_peer_${currentUser.id}`, contact.id);
       localStorage.setItem(`securechat_active_peer_contact_${currentUser.id}`, JSON.stringify(contact));
@@ -764,9 +773,16 @@ export default function ChatPage() {
                       <span className="text-[11px] text-slate-400 truncate max-w-[140px]">
                         {conv.last_message || 'Direct chat'}
                       </span>
-                      <span className="text-[10px] text-emerald-500 font-mono flex items-center gap-0.5">
-                        <Lock className="w-2.5 h-2.5" /> E2EE
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] text-emerald-500 font-mono flex items-center gap-0.5">
+                          <Lock className="w-2.5 h-2.5" /> E2EE
+                        </span>
+                        {unreadCounts[contact.id] > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-bold font-mono shadow-sm animate-pulse">
+                            {unreadCounts[contact.id]}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -999,11 +1015,11 @@ export default function ChatPage() {
                             }
                           >
                             {msg.status === 'read' ? (
-                              <CheckCheck className="w-3.5 h-3.5 text-cyan-300" />
+                              <CheckCheck className="w-3.5 h-3.5 text-cyan-300 drop-shadow-[0_0_6px_rgba(103,232,249,0.9)]" />
                             ) : msg.status === 'delivered' ? (
-                              <CheckCheck className="w-3.5 h-3.5 text-white/90" />
+                              <CheckCheck className="w-3.5 h-3.5 text-emerald-200/50" />
                             ) : (
-                              <Check className="w-3.5 h-3.5 text-white/70" />
+                              <Check className="w-3.5 h-3.5 text-emerald-200/50" />
                             )}
                           </span>
                         )}
