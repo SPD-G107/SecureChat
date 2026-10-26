@@ -44,6 +44,15 @@ router.patch('/profile', async (req: AuthenticatedRequest, res: Response): Promi
     const { displayName } = req.body;
     await UserRepository.updateDisplayName(req.user!.userId, displayName);
     const updated = await UserRepository.findById(req.user!.userId);
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('user:profile_updated', {
+        userId: updated!.id,
+        displayName: updated!.display_name,
+        avatarUrl: updated!.avatar_url,
+      });
+    }
+
     res.json({
       message: 'Profile updated successfully',
       user: {
@@ -75,6 +84,16 @@ router.post('/avatar', async (req: AuthenticatedRequest, res: Response): Promise
     }
     await UserRepository.updateAvatar(req.user!.userId, avatarUrl);
     const updated = await UserRepository.findById(req.user!.userId);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('user:profile_updated', {
+        userId: updated!.id,
+        displayName: updated!.display_name,
+        avatarUrl: updated!.avatar_url,
+      });
+    }
+
     res.json({
       message: 'Avatar updated successfully',
       user: {
@@ -96,6 +115,16 @@ router.delete('/avatar', async (req: AuthenticatedRequest, res: Response): Promi
   try {
     await UserRepository.updateAvatar(req.user!.userId, null);
     const updated = await UserRepository.findById(req.user!.userId);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('user:profile_updated', {
+        userId: updated!.id,
+        displayName: updated!.display_name,
+        avatarUrl: null,
+      });
+    }
+
     res.json({
       message: 'Avatar removed successfully',
       user: {
