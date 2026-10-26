@@ -20,15 +20,29 @@ import {
   Check,
   Users,
   Loader2,
+  Plus,
+  MessageSquarePlus,
+  X,
 } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
 import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket-client';
 
+interface ConversationItem {
+  id: string;
+  peer_id: string;
+  peer_username: string;
+  peer_display_name?: string | null;
+  last_message?: string;
+  last_message_at?: string;
+  updated_at: string;
+  contact?: Contact;
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messagesMap, setMessagesMap] = useState<Record<string, ChatMessage[]>>({});
   const [inputText, setInputText] = useState('');
@@ -38,9 +52,16 @@ export default function ChatPage() {
   const [copiedFingerprint, setCopiedFingerprint] = useState(false);
   const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // New Chat / Directory view state (Telegram/Signal style)
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [directoryUsers, setDirectoryUsers] = useState<Contact[]>([]);
+  const [loadingDirectory, setLoadingDirectory] = useState(false);
+  const [directorySearchQuery, setDirectorySearchQuery] = useState('');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Authentication check and load real contacts from MySQL
+  // 1. Initial Authentication & Load Active Conversations
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -61,57 +82,8 @@ export default function ChatPage() {
       return;
     }
 
-    // Fetch real contacts from live MySQL database
-    ApiClient.get('/users/search')
-      .then(async (res) => {
-        if (res && Array.isArray(res.users)) {
-          // Exclude currently logged-in user from peer contact list
-          const peerUsers = res.users.filter(
-            (u: any) => u.id !== parsedUser.id && u.username !== parsedUser.username
-          );
-
-          const loadedContacts: Contact[] = await Promise.all(
-            peerUsers.map(async (u: any) => {
-              let fingerprint = '0000 0000 0000 0000 0000 0000 0000 0000';
-              let version = 1;
-              try {
-                const keyInfo = await ApiClient.get(`/keys/${u.id}`);
-                if (keyInfo && keyInfo.fingerprint) {
-                  fingerprint = keyInfo.fingerprint;
-                  version = keyInfo.version || 1;
-                }
-              } catch {}
-
-              return {
-                id: u.id,
-                username: u.username,
-                displayName: u.display_name || u.username,
-                role: u.role || 'user',
-                status: u.status || 'active',
-                avatarInitials: (u.username || 'U').slice(0, 2).toUpperCase(),
-                isOnline: true,
-                publicKeyVersion: version,
-                fingerprint,
-              };
-            })
-          );
-
-          setContacts(loadedContacts);
-          if (loadedContacts.length > 0) {
-            setActiveContact(loadedContacts[0]);
-          }
-        }
-      })
-      .catch((err: any) => {
-        if (err?.message?.includes('401') || err?.message?.includes('denied') || err?.message?.includes('Invalid')) {
-          localStorage.removeItem('securechat_jwt');
-          localStorage.removeItem('securechat_user');
-          router.replace('/login');
-        }
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    // Load user's REAL active conversations from MySQL
+    loadActiveConversations(parsedUser);
 
     // Initialize local conversation AES-256-GCM encryption key
     if (window.crypto?.subtle) {
@@ -162,6 +134,9 @@ export default function ChatPage() {
             [senderId]: updated,
           };
         });
+
+        // Refresh conversation list so the new chat shows up immediately
+        loadActiveConversations(parsedUser);
       });
     }
 
@@ -170,7 +145,125 @@ export default function ChatPage() {
     };
   }, [router]);
 
-  // Load real messages for active contact from local persistent storage or MySQL
+  // Load active conversations for current user
+  const loadActiveConversations = async (user: User) => {
+    try {
+      const res = await ApiClient.get('/conversations');
+      if (res && Array.isArray(res.conversations)) {
+        const enriched: ConversationItem[] = await Promise.all(
+          res.conversations.map(async (conv: any) => {
+            let fingerprint = '0000 0000 0000 0000 0000 0000 0000 0000';
+            let version = 1;
+            try {
+              const keyInfo = await ApiClient.get(`/keys/${conv.peer_id}`);
+              if (keyInfo && keyInfo.fingerprint) {
+                fingerprint = keyInfo.fingerprint;
+                version = keyInfo.version || 1;
+              }
+            } catch {}
+
+            const contact: Contact = {
+              id: conv.peer_id,
+              username: conv.peer_username,
+              displayName: conv.peer_display_name || conv.peer_username,
+              role: 'user',
+              status: 'active',
+              avatarInitials: (conv.peer_username || 'U').slice(0, 2).toUpperCase(),
+              isOnline: true,
+              publicKeyVersion: version,
+              fingerprint,
+            };
+
+            // Read last message from local cache if available
+            let lastSnippet = 'Direct chat';
+            const localSaved = localStorage.getItem(`securechat_msgs_${user.id}_${conv.peer_id}`);
+            if (localSaved) {
+              try {
+                const parsedMsgs: ChatMessage[] = JSON.parse(localSaved);
+                if (parsedMsgs.length > 0) {
+                  lastSnippet = parsedMsgs[parsedMsgs.length - 1].text;
+                }
+              } catch {}
+            }
+
+            return {
+              id: conv.id,
+              peer_id: conv.peer_id,
+              peer_username: conv.peer_username,
+              peer_display_name: conv.peer_display_name,
+              last_message: lastSnippet,
+              last_message_at: conv.last_message_at || conv.updated_at,
+              updated_at: conv.updated_at,
+              contact,
+            };
+          })
+        );
+
+        setConversations(enriched);
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('401') || err?.message?.includes('denied') || err?.message?.includes('Invalid')) {
+        localStorage.removeItem('securechat_jwt');
+        localStorage.removeItem('securechat_user');
+        router.replace('/login');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Open directory to find any registered user (Start New Chat)
+  const openNewChatDirectory = async () => {
+    setIsNewChatModalOpen(true);
+    setLoadingDirectory(true);
+    try {
+      const res = await ApiClient.get('/users/search');
+      if (res && Array.isArray(res.users)) {
+        const others = res.users.filter(
+          (u: any) => u.id !== currentUser?.id && u.username !== currentUser?.username
+        );
+
+        const contactsList: Contact[] = await Promise.all(
+          others.map(async (u: any) => {
+            let fingerprint = '0000 0000 0000 0000 0000 0000 0000 0000';
+            let version = 1;
+            try {
+              const keyInfo = await ApiClient.get(`/keys/${u.id}`);
+              if (keyInfo && keyInfo.fingerprint) {
+                fingerprint = keyInfo.fingerprint;
+                version = keyInfo.version || 1;
+              }
+            } catch {}
+
+            return {
+              id: u.id,
+              username: u.username,
+              displayName: u.display_name || u.username,
+              role: u.role || 'user',
+              status: u.status || 'active',
+              avatarInitials: (u.username || 'U').slice(0, 2).toUpperCase(),
+              isOnline: true,
+              publicKeyVersion: version,
+              fingerprint,
+            };
+          })
+        );
+
+        setDirectoryUsers(contactsList);
+      }
+    } catch {} finally {
+      setLoadingDirectory(false);
+    }
+  };
+
+  // Select contact to chat with
+  const handleSelectContact = (contact: Contact) => {
+    setActiveContact(contact);
+    setIsNewChatModalOpen(false);
+    setSearchQuery('');
+  };
+
+  // Load messages when activeContact changes
   useEffect(() => {
     if (!activeContact?.id || !currentUser?.id) return;
 
@@ -230,10 +323,18 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messagesMap, activeContact]);
 
-  const filteredContacts = contacts.filter(
+  // Filter conversations
+  const filteredConversations = conversations.filter(
     (c) =>
-      c.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+      c.peer_username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.peer_display_name && c.peer_display_name.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  // Filter directory users
+  const filteredDirectoryUsers = directoryUsers.filter(
+    (u) =>
+      u.username.toLowerCase().includes(directorySearchQuery.toLowerCase()) ||
+      u.displayName.toLowerCase().includes(directorySearchQuery.toLowerCase())
   );
 
   const activeMessages = activeContact ? messagesMap[activeContact.id] || [] : [];
@@ -305,6 +406,11 @@ export default function ChatPage() {
     }
 
     setInputText('');
+
+    // Update conversation list locally
+    setTimeout(() => {
+      if (currentUser) loadActiveConversations(currentUser);
+    }, 400);
   };
 
   const handleCopySafetyNumber = () => {
@@ -329,25 +435,30 @@ export default function ChatPage() {
 
   return (
     <div className="flex-1 flex overflow-hidden h-[calc(100vh-57px)] bg-[#0b0f19]">
-      {/* Sidebar: Contacts */}
+      {/* Sidebar: Active Conversations (Telegram / Signal style) */}
       <aside className="w-80 bg-slate-900/40 border-r border-slate-800 flex flex-col shrink-0">
-        {/* Sidebar Header & Search */}
+        {/* Sidebar Header & Start New Chat Button */}
         <div className="p-3.5 border-b border-slate-800">
           <div className="flex items-center justify-between mb-2.5">
             <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-              Contacts
+              Chats ({conversations.length})
             </h2>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">
-              {filteredContacts.length}
-            </span>
+            <button
+              onClick={openNewChatDirectory}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors shadow-sm"
+              title="Start New Chat"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Chat</span>
+            </button>
           </div>
 
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search contacts..."
+              placeholder="Search active chats..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-slate-950/60 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
@@ -355,26 +466,39 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Contact List */}
+        {/* Active Conversations List */}
         <div className="flex-1 p-2 overflow-y-auto space-y-1">
-          {filteredContacts.length === 0 ? (
-            <div className="p-6 text-center text-xs text-slate-500">
-              <Users className="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-60" />
-              <p className="font-semibold text-slate-400">No Contacts Found</p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Register more accounts at /register to start messaging!
+          {conversations.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center p-6 text-center text-xs">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-3 shadow-inner">
+                <MessageSquarePlus className="w-6 h-6" />
+              </div>
+              <p className="font-bold text-slate-300 text-sm">No Active Chats</p>
+              <p className="mt-1 text-slate-500 text-xs leading-relaxed max-w-[200px]">
+                Your inbox is empty. Start a new conversation with any registered user.
               </p>
+              <button
+                onClick={openNewChatDirectory}
+                className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Start New Chat</span>
+              </button>
+            </div>
+          ) : filteredConversations.length === 0 ? (
+            <div className="p-6 text-center text-xs text-slate-500">
+              <p>No chats matching &quot;{searchQuery}&quot;</p>
             </div>
           ) : (
-            filteredContacts.map((contact) => {
+            filteredConversations.map((conv) => {
+              const contact = conv.contact;
+              if (!contact) return null;
               const isSelected = activeContact?.id === contact.id;
-              const lastMsg = (messagesMap[contact.id] || []).slice(-1)[0];
-              const hasAlert = contact.publicKeyVersion > 1 && !dismissedWarnings[contact.id];
 
               return (
                 <button
-                  key={contact.id}
-                  onClick={() => setActiveContact(contact)}
+                  key={conv.id}
+                  onClick={() => handleSelectContact(contact)}
                   className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-colors text-left relative ${
                     isSelected
                       ? 'bg-emerald-500/10 border border-emerald-500/30 text-white'
@@ -396,22 +520,21 @@ export default function ChatPage() {
                         {contact.displayName}
                       </span>
                       <span className="text-[10px] text-slate-500 font-mono">
-                        {lastMsg ? lastMsg.timestamp : ''}
+                        {conv.last_message_at
+                          ? new Date(conv.last_message_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : ''}
                       </span>
                     </div>
                     <div className="flex items-center justify-between mt-0.5">
                       <span className="text-[11px] text-slate-400 truncate max-w-[140px]">
-                        {lastMsg ? lastMsg.text : 'Direct chat'}
+                        {conv.last_message || 'Direct chat'}
                       </span>
-                      {hasAlert ? (
-                        <span className="px-1.5 py-0.2 rounded bg-amber-950 text-amber-400 border border-amber-800 text-[9px] font-bold">
-                          Key v{contact.publicKeyVersion}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-emerald-500 font-mono flex items-center gap-0.5">
-                          <Lock className="w-2.5 h-2.5" /> E2EE
-                        </span>
-                      )}
+                      <span className="text-[10px] text-emerald-500 font-mono flex items-center gap-0.5">
+                        <Lock className="w-2.5 h-2.5" /> E2EE
+                      </span>
                     </div>
                   </div>
                 </button>
@@ -609,14 +732,107 @@ export default function ChatPage() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-            <MessageSquare className="w-12 h-12 text-slate-700 mb-3" />
-            <h3 className="text-base font-bold text-slate-200">Select a Contact</h3>
-            <p className="text-xs text-slate-500 max-w-sm mt-1">
-              Choose a contact from the list on the left to initiate end-to-end encrypted messaging.
+            <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 shadow-xl">
+              <ShieldCheck className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-bold text-white">
+              Welcome to SecureChat, @{currentUser?.username}!
+            </h3>
+            <p className="text-xs text-slate-400 max-w-sm mt-1 leading-relaxed">
+              Private, real-time messaging protected with client-side Web Crypto AES-256-GCM authenticated encryption.
             </p>
+            <button
+              onClick={openNewChatDirectory}
+              className="mt-6 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950/40 transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Start a New Chat</span>
+            </button>
           </div>
         )}
       </section>
+
+      {/* New Chat / User Directory Modal (Signal/Telegram Style) */}
+      {isNewChatModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Users className="w-4 h-4 text-emerald-400" />
+                  Start a New Conversation
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Select any registered user from MySQL to initiate E2EE chat
+                </p>
+              </div>
+              <button
+                onClick={() => setIsNewChatModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Search Input */}
+            <div className="p-3 border-b border-slate-800/80 bg-slate-950/40">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search registered user directory..."
+                  value={directorySearchQuery}
+                  onChange={(e) => setDirectorySearchQuery(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Users Directory List */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {loadingDirectory ? (
+                <div className="p-8 text-center flex flex-col items-center justify-center">
+                  <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mb-2" />
+                  <p className="text-xs text-slate-400 font-mono">Loading registered users from MySQL...</p>
+                </div>
+              ) : filteredDirectoryUsers.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500">
+                  <Users className="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-50" />
+                  <p className="font-medium text-slate-400">No other registered users found</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Register more accounts at /register to chat!
+                  </p>
+                </div>
+              ) : (
+                filteredDirectoryUsers.map((user) => (
+                  <button
+                    key={user.id}
+                    onClick={() => handleSelectContact(user)}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-800/60 transition-colors text-left group"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-slate-800 group-hover:bg-emerald-950/60 border border-slate-700 group-hover:border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs transition-colors">
+                      {user.avatarInitials}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-xs text-white group-hover:text-emerald-300 transition-colors truncate">
+                          {user.displayName}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-mono text-[9px] border border-emerald-900">
+                          E2EE Ready
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-mono">@{user.username}</p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
