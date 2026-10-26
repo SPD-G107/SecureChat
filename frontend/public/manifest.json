@@ -1,0 +1,47 @@
+{
+  "name": "SecureChat — End-to-End Encrypted Private Messaging",
+  "short_name": "SecureChat",
+  "description": "Private, zero-knowledge end-to-end encrypted messaging web application with on-device Web Crypto keys.",
+  "start_url": "/chat",
+  "scope": "/",
+  "id": "/chat",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#059669",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "800x800",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "categories": ["social", "security", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Encrypted Chats",
+      "short_name": "Chats",
+      "url": "/chat",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Verify Safety Keys",
+      "short_name": "Verify",
+      "url": "/verify-key",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
