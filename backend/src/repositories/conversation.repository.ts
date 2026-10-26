@@ -31,7 +31,7 @@ export class ConversationRepository {
   static async findUserConversations(userId: string): Promise<any[]> {
     const rows = await query<any[]>(
       `SELECT c.id, c.created_at, c.updated_at,
-              u.id as peer_id, u.username as peer_username, u.display_name as peer_display_name,
+              u.id as peer_id, u.username as peer_username, u.display_name as peer_display_name, u.avatar_url as peer_avatar_url,
               (SELECT m.encrypted_payload FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_encrypted_payload,
               (SELECT m.created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_message_at
        FROM conversations c

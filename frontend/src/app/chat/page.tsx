@@ -34,6 +34,7 @@ interface ConversationItem {
   peer_id: string;
   peer_username: string;
   peer_display_name?: string | null;
+  peer_avatar_url?: string | null;
   last_message?: string;
   last_message_at?: string;
   updated_at: string;
@@ -309,6 +310,7 @@ export default function ChatPage() {
               id: conv.peer_id,
               username: conv.peer_username,
               displayName: conv.peer_display_name || conv.peer_username,
+              avatarUrl: conv.peer_avatar_url || null,
               role: 'user',
               status: 'active',
               avatarInitials: (conv.peer_username || 'U').slice(0, 2).toUpperCase(),
@@ -405,7 +407,8 @@ export default function ChatPage() {
             return {
               id: u.id,
               username: u.username,
-              displayName: u.display_name || u.username,
+              displayName: u.display_name || u.displayName || u.username,
+              avatarUrl: u.avatar_url || u.avatarUrl || null,
               role: u.role || 'user',
               status: u.status || 'active',
               avatarInitials: (u.username || 'U').slice(0, 2).toUpperCase(),
@@ -745,8 +748,12 @@ export default function ChatPage() {
                   }`}
                 >
                   <div className="relative">
-                    <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs">
-                      {contact.avatarInitials}
+                    <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs overflow-hidden shrink-0">
+                      {contact.avatarUrl ? (
+                        <img src={contact.avatarUrl} alt={contact.displayName} className="w-full h-full object-cover" />
+                      ) : (
+                        contact.avatarInitials
+                      )}
                     </div>
                     {/* Real-time online status dot */}
                     {isPeerOnline && (
@@ -835,8 +842,12 @@ export default function ChatPage() {
                   <ArrowLeft className="w-5 h-5 text-emerald-400" />
                 </button>
                 <div className="relative shrink-0">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs">
-                    {activeContact.avatarInitials}
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs shrink-0 overflow-hidden">
+                    {activeContact.avatarUrl ? (
+                      <img src={activeContact.avatarUrl} alt={activeContact.displayName} className="w-full h-full object-cover" />
+                    ) : (
+                      activeContact.avatarInitials
+                    )}
                   </div>
                   {isCurrentPeerOnline && (
                     <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0b0f19] animate-pulse" />
@@ -1142,8 +1153,12 @@ export default function ChatPage() {
                       className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-800/60 transition-colors text-left group"
                     >
                       <div className="relative">
-                        <div className="w-9 h-9 rounded-full bg-slate-800 group-hover:bg-emerald-950/60 border border-slate-700 group-hover:border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs transition-colors">
-                          {user.avatarInitials}
+                        <div className="w-9 h-9 rounded-full bg-slate-800 group-hover:bg-emerald-950/60 border border-slate-700 group-hover:border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs transition-colors overflow-hidden shrink-0">
+                          {user.avatarUrl ? (
+                            <img src={user.avatarUrl} alt={user.displayName} className="w-full h-full object-cover" />
+                          ) : (
+                            user.avatarInitials
+                          )}
                         </div>
                         {isPeerOnline && (
                           <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-[#0b0f19] animate-pulse" />

@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 export class UserRepository {
   static async findByUsername(username: string): Promise<User | null> {
     const rows = await query<User[]>(
-      'SELECT id, username, password_hash, display_name, role, status, created_at, updated_at FROM users WHERE username = ? LIMIT 1',
+      'SELECT id, username, password_hash, display_name, avatar_url, role, status, created_at, updated_at FROM users WHERE username = ? LIMIT 1',
       [username]
     );
     return rows[0] || null;
@@ -13,10 +13,18 @@ export class UserRepository {
 
   static async findById(id: string): Promise<User | null> {
     const rows = await query<User[]>(
-      'SELECT id, username, password_hash, display_name, role, status, created_at, updated_at FROM users WHERE id = ? LIMIT 1',
+      'SELECT id, username, password_hash, display_name, avatar_url, role, status, created_at, updated_at FROM users WHERE id = ? LIMIT 1',
       [id]
     );
     return rows[0] || null;
+  }
+
+  static async updateAvatar(userId: string, avatarUrl: string | null): Promise<void> {
+    await query('UPDATE users SET avatar_url = ? WHERE id = ?', [avatarUrl, userId]);
+  }
+
+  static async updateDisplayName(userId: string, displayName?: string | null): Promise<void> {
+    await query('UPDATE users SET display_name = ? WHERE id = ?', [displayName?.trim() || null, userId]);
   }
 
   static async createUser(data: {
@@ -62,7 +70,7 @@ export class UserRepository {
 
   static async searchUsers(searchQuery: string, excludeUserId: string): Promise<Array<Omit<User, 'password_hash'>>> {
     const rows = await query<Array<Omit<User, 'password_hash'>>>(
-      'SELECT id, username, display_name, role, status, created_at FROM users WHERE id != ? AND (username LIKE ? OR display_name LIKE ?) AND status = "active" LIMIT 20',
+      'SELECT id, username, display_name, avatar_url, role, status, created_at FROM users WHERE id != ? AND (username LIKE ? OR display_name LIKE ?) AND status = "active" LIMIT 20',
       [excludeUserId, `%${searchQuery}%`, `%${searchQuery}%`]
     );
     return rows;

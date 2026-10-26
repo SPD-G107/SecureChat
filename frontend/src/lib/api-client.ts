@@ -47,4 +47,11 @@ export class ApiClient {
       body: body ? JSON.stringify(body) : undefined,
     });
   }
+
+  static delete<T = any>(endpoint: string, body?: any) {
+    return this.request<T>(endpoint, {
+      method: 'DELETE',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
 }

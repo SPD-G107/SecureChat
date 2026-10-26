@@ -38,4 +38,78 @@ router.get('/:id/public-key', async (req: AuthenticatedRequest, res: Response): 
   }
 });
 
+// Update display name / profile
+router.patch('/profile', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { displayName } = req.body;
+    await UserRepository.updateDisplayName(req.user!.userId, displayName);
+    const updated = await UserRepository.findById(req.user!.userId);
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        id: updated!.id,
+        username: updated!.username,
+        displayName: updated!.display_name,
+        avatarUrl: updated!.avatar_url,
+        role: updated!.role,
+        status: updated!.status,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// Update user avatar
+router.post('/avatar', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { avatarUrl } = req.body;
+    if (avatarUrl !== null && (!avatarUrl || typeof avatarUrl !== 'string')) {
+      res.status(400).json({ error: 'Valid avatar image string is required' });
+      return;
+    }
+    // Limit to 5MB base64 payload
+    if (avatarUrl && avatarUrl.length > 5 * 1024 * 1024) {
+      res.status(400).json({ error: 'Avatar image too large (max 3MB)' });
+      return;
+    }
+    await UserRepository.updateAvatar(req.user!.userId, avatarUrl);
+    const updated = await UserRepository.findById(req.user!.userId);
+    res.json({
+      message: 'Avatar updated successfully',
+      user: {
+        id: updated!.id,
+        username: updated!.username,
+        displayName: updated!.display_name,
+        avatarUrl: updated!.avatar_url,
+        role: updated!.role,
+        status: updated!.status,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update avatar' });
+  }
+});
+
+// Remove user avatar
+router.delete('/avatar', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    await UserRepository.updateAvatar(req.user!.userId, null);
+    const updated = await UserRepository.findById(req.user!.userId);
+    res.json({
+      message: 'Avatar removed successfully',
+      user: {
+        id: updated!.id,
+        username: updated!.username,
+        displayName: updated!.display_name,
+        avatarUrl: null,
+        role: updated!.role,
+        status: updated!.status,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to remove avatar' });
+  }
+});
+
 export default router;

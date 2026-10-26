@@ -2,6 +2,7 @@ export interface User {
   id: string;
   username: string;
   displayName?: string | null;
+  avatarUrl?: string | null;
   role: 'user' | 'admin';
   status: 'active' | 'suspended';
   avatarInitials?: string;
@@ -13,6 +14,7 @@ export interface Contact {
   id: string;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
   role: 'user' | 'admin';
   status: 'active' | 'suspended';
   avatarInitials: string;
