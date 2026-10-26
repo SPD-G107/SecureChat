@@ -599,6 +599,82 @@ The additional requirement concerning API leakage will be addressed through loca
 
 The final goal is to deliver a functional application with a clear architecture, documented implementation decisions, and evidence-based security evaluation, while honestly explaining the protections achieved and the limitations that remain.
 
+## 16. Getting Started & How to Run the Application
+
+### 16.1 Prerequisites
+- **Node.js**: v18.x or v20.x+
+- **MySQL Database Server**: v8.0+ running on port `3306` or `3307`
+- **Docker & Docker Compose** (Optional, for production deployment)
+
+### 16.2 Database Configuration & Setup
+1. Ensure your local MySQL instance is running.
+2. In `backend/.env`, configure connection credentials:
+   ```env
+   NODE_ENV=development
+   PORT=5000
+   CORS_ORIGIN=http://localhost:3000
+   DB_HOST=localhost
+   DB_PORT=3307
+   DB_USER=securechat_user
+   DB_PASSWORD=securechat_pass_2026
+   DB_NAME=securechat
+   JWT_SECRET=super_secret_jwt_key_at_least_32_characters_long_for_security
+   JWT_EXPIRES_IN=7d
+   ```
+3. Database migrations and initial seed records:
+   ```bash
+   cd database
+   # Tables: users, public_keys, conversations, messages, audit_logs
+   ```
+
+### 16.3 Running the Backend Server
+```bash
+cd backend
+npm install
+npm run dev
+# Live server will start on http://localhost:5000
+# Live health check: http://localhost:5000/health
+```
+
+### 16.4 Running the Frontend Client
+```bash
+cd frontend
+npm install
+npm run dev
+# Next.js web application accessible at: http://localhost:3000
+```
+
+### 16.5 Containerized Deployment (Docker Compose)
+To launch the entire isolated stack with zero external dependencies:
+```bash
+docker compose up --build
+```
+
+### 16.6 Default Pre-Seeded Accounts for Testing
+
+| Username | Passphrase | Role | Description |
+| :--- | :--- | :--- | :--- |
+| **admin** | `AdminSecurePass2026!` | `admin` | System Administrator (Full Audit Logs & Account Status Toggle) |
+| **alice** | `AliceSecurePass2026!` | `user` | Project Lead (Pre-seeded E2EE Identity) |
+| **bob** | `BobSecurePass2026!` | `user` | Standard User (Key Rotation Demo) |
+| **charlie** | `CharlieSecurePass2026!` | `user` | Standard User |
+
+*New accounts can be registered anytime at `http://localhost:3000/register` with on-device cryptographic key generation.*
+
+### 16.7 Signal / Telegram Inbox Flow
+1. **Zero-Pollution Inbox for New Accounts**:
+   - Newly created accounts start with an empty inbox (`0 Active Chats`), exactly matching Signal and Telegram.
+2. **Starting Conversations**:
+   - Click the **`+ New Chat`** button in the sidebar or on the central welcome screen.
+   - Select any registered peer from the live MySQL directory.
+   - The recipient's public key (ECDH P-256) and Safety Number are fetched and verified out-of-band.
+   - Once a message is sent, the conversation is automatically pinned to your active chats list.
+3. **Real-Time Bidirectional Testing**:
+   - Open `http://localhost:3000` in Window A (e.g. login as `@nan`).
+   - Open `http://localhost:3000` in Window B / Incognito (e.g. login as `@lang`).
+   - Exchange messages between both tabs to observe instant Socket.IO delivery, real-time AES-256-GCM ciphertext inspection, and zero plaintext exposure to the server.
+
+
 
 
 
