@@ -34,6 +34,34 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        {/* Shield application against third-party Chrome extension injected errors (e.g. Urban VPN, adblockers) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                if (typeof window === 'undefined') return;
+                function isExtensionError(err, url) {
+                  var str = (url || '') + ' ' + ((err && (err.stack || err.message)) || '');
+                  return str.indexOf('chrome-extension://') !== -1 || str.indexOf('moz-extension://') !== -1 || str.indexOf('M_ID') !== -1;
+                }
+                window.addEventListener('error', function(e) {
+                  if (isExtensionError(e.error, e.filename)) {
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                    return true;
+                  }
+                }, true);
+                window.addEventListener('unhandledrejection', function(e) {
+                  if (isExtensionError(e.reason, '')) {
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                    return true;
+                  }
+                }, true);
+              })();
+            `,
+          }}
+        />
       </head>
       <body className="min-h-screen flex flex-col bg-[#0b0f19] text-slate-100 antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
         <Navbar />
