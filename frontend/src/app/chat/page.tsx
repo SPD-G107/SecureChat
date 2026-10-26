@@ -915,11 +915,11 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="flex-1 flex overflow-hidden h-[calc(100vh-57px)] bg-[#0b0f19]">
+    <div className="flex-1 flex overflow-hidden h-full min-h-0 bg-[#0b0f19]">
       {/* Sidebar: Active Conversations (Telegram / Signal style) */}
-      <aside className={`${activeContact ? 'hidden md:flex' : 'flex'} w-full md:w-80 bg-slate-900/40 border-r border-slate-800 flex-col shrink-0`}>
+      <aside className={`${activeContact ? 'hidden md:flex' : 'flex'} w-full md:w-80 bg-slate-900/40 border-r border-slate-800 flex-col shrink-0 h-full min-h-0 overflow-hidden`}>
         {/* Sidebar Header & Start New Chat Button */}
-        <div className="p-3.5 border-b border-slate-800">
+        <div className="p-3.5 border-b border-slate-800 shrink-0">
           <div className="flex items-center justify-between mb-2.5">
             <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
@@ -948,7 +948,7 @@ export default function ChatPage() {
         </div>
 
         {/* Active Conversations List */}
-        <div className="flex-1 p-2 overflow-y-auto space-y-1">
+        <div className="flex-1 p-2 overflow-y-auto min-h-0 space-y-1">
           {conversations.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center p-6 text-center text-xs">
               <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-3 shadow-inner">
@@ -1044,7 +1044,7 @@ export default function ChatPage() {
 
         {/* Current User Card */}
         {currentUser && (
-          <div className="p-3 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between">
+          <div className="p-3 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-full bg-emerald-950 border border-emerald-800 flex items-center justify-center text-emerald-400 font-bold text-xs">
                 {(currentUser.username || 'U').slice(0, 2).toUpperCase()}
@@ -1067,11 +1067,11 @@ export default function ChatPage() {
       </aside>
 
       {/* Main Chat Workspace */}
-      <section className={`${!activeContact ? 'hidden md:flex' : 'flex'} flex-1 flex-col bg-[#0b0f19] min-w-0`}>
+      <section className={`${!activeContact ? 'hidden md:flex' : 'flex'} flex-1 flex-col h-full min-h-0 overflow-hidden bg-[#0b0f19] min-w-0`}>
         {activeContact ? (
           <>
             {/* Chat Header */}
-            <div className="px-3 sm:px-6 py-2.5 sm:py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between gap-2">
+            <div className="px-3 sm:px-6 py-2.5 sm:py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 {/* Mobile Back Button (Returns to conversations list) */}
                 <button
@@ -1195,7 +1195,7 @@ export default function ChatPage() {
 
             {/* Key-Change Warning Banner */}
             {hasKeyWarning && (
-              <div className="p-3 bg-amber-500/10 border-b border-amber-500/30 text-amber-300 text-xs flex items-center justify-between px-6">
+              <div className="p-3 bg-amber-500/10 border-b border-amber-500/30 text-amber-300 text-xs flex items-center justify-between px-6 shrink-0">
                 <div className="flex items-center gap-2.5">
                   <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
                   <span>
@@ -1220,7 +1220,7 @@ export default function ChatPage() {
             )}
 
             {/* Message Feed */}
-            <div className="flex-1 p-3.5 sm:p-6 overflow-y-auto space-y-2.5 sm:space-y-3">
+            <div className="flex-1 p-3.5 sm:p-6 overflow-y-auto min-h-0 space-y-2.5 sm:space-y-3">
               <div className="text-center my-2">
                 <span className="px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-[10px] text-slate-400 font-mono inline-flex items-center gap-1.5">
                   <Lock className="w-3 h-3 text-emerald-400" /> Messages are end-to-end encrypted (AES-256-GCM). Zero server plaintext.
@@ -1328,7 +1328,7 @@ export default function ChatPage() {
 
             {/* Editing Message Banner */}
             {editingMessage && (
-              <div className="px-3.5 sm:px-6 py-2 bg-emerald-950/70 border-t border-emerald-500/30 flex items-center justify-between text-xs animate-in fade-in">
+              <div className="px-3.5 sm:px-6 py-2 bg-emerald-950/70 border-t border-emerald-500/30 flex items-center justify-between text-xs shrink-0 animate-in fade-in">
                 <div className="flex items-center gap-2 truncate">
                   <Pencil className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   <span className="font-semibold text-emerald-300">Editing message:</span>
@@ -1348,7 +1348,7 @@ export default function ChatPage() {
             {/* Clean Input Bar */}
             <form
               onSubmit={handleSendMessage}
-              className="p-2.5 sm:p-3.5 border-t border-slate-800 bg-slate-900/40 flex gap-2 sm:gap-2.5 items-center"
+              className="p-2.5 sm:p-3.5 border-t border-slate-800 bg-slate-900/40 flex gap-2 sm:gap-2.5 items-center shrink-0"
             >
               <input
                 type="text"

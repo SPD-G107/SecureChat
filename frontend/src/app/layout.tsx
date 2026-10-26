@@ -63,9 +63,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="min-h-screen flex flex-col bg-[#0b0f19] text-slate-100 antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
+      <body className="h-screen overflow-hidden flex flex-col bg-[#0b0f19] text-slate-100 antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
         <Navbar />
-        <main className="flex-1 flex flex-col">{children}</main>
+        <main className="flex-1 flex flex-col min-h-0 overflow-y-auto">{children}</main>
         <PwaManager />
       </body>
     </html>
