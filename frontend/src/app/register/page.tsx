@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Shield, Lock, User, ArrowRight, AlertCircle, Key, CheckCircle, Sparkles } from 'lucide-react';
@@ -15,6 +15,26 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [stepMsg, setStepMsg] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('securechat_jwt');
+      const raw = localStorage.getItem('securechat_user');
+      if (token && raw) {
+        try {
+          const user = JSON.parse(raw);
+          if (user && user.id) {
+            setCurrentUser(user);
+            router.replace('/chat');
+            return;
+          }
+        } catch {}
+      }
+      setIsCheckingAuth(false);
+    }
+  }, [router]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +85,18 @@ export default function RegisterPage() {
       setStepMsg(null);
     }
   };
+
+  if (isCheckingAuth && currentUser) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-4 bg-[#0b0f19] text-center">
+        <div className="w-10 h-10 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin mb-4" />
+        <p className="text-sm font-semibold text-white">
+          Already signed in as <span className="text-emerald-400">@{currentUser.username}</span>
+        </p>
+        <p className="text-xs text-slate-400 mt-1">Redirecting to your encrypted messages...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex items-center justify-center p-4 bg-[#0b0f19]">

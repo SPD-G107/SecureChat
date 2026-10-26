@@ -1,7 +1,53 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Shield, Lock, KeyRound, ServerOff, ArrowRight } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Shield, Lock, KeyRound, ServerOff, ArrowRight, MessageSquare, LogOut } from 'lucide-react';
+import { ApiClient } from '@/lib/api-client';
 
 export default function HomePage() {
+  const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const syncAuth = () => {
+      if (typeof window === 'undefined') return;
+      const rawUser = localStorage.getItem('securechat_user');
+      const token = localStorage.getItem('securechat_jwt');
+      if (rawUser && token) {
+        try {
+          setCurrentUser(JSON.parse(rawUser));
+        } catch {
+          setCurrentUser(null);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+    };
+
+    syncAuth();
+    window.addEventListener('storage', syncAuth);
+    window.addEventListener('securechat_auth', syncAuth);
+    return () => {
+      window.removeEventListener('storage', syncAuth);
+      window.removeEventListener('securechat_auth', syncAuth);
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await ApiClient.post('/auth/logout');
+    } catch {}
+    localStorage.removeItem('securechat_jwt');
+    localStorage.removeItem('securechat_user');
+    window.dispatchEvent(new Event('securechat_auth'));
+    setCurrentUser(null);
+    router.push('/login');
+  };
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 bg-[#0b0f19]">
       <div className="max-w-3xl mx-auto text-center">
@@ -31,27 +77,43 @@ export default function HomePage() {
           Messages are encrypted on your device using Web Crypto API (ECDH P-256 and AES-256-GCM). The server stores zero plaintext.
         </p>
 
-        {/* Clean Call-to-Action Buttons */}
+        {/* Dynamic Call-to-Action Buttons based on Auth State */}
         <div className="flex items-center justify-center gap-3 mb-16">
-          <Link
-            href="/chat"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors shadow-sm"
-          >
-            Open Chat
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-          <Link
-            href="/register"
-            className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 font-medium text-sm transition-colors"
-          >
-            Create Account
-          </Link>
-          <Link
-            href="/login"
-            className="px-4 py-2.5 text-slate-400 hover:text-white font-medium text-sm transition-colors"
-          >
-            Sign In
-          </Link>
+          {mounted && currentUser ? (
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <Link
+                href="/chat"
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition-all shadow-lg shadow-emerald-950/50 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>Continue to Chat as @{currentUser.username}</span>
+                <ArrowRight className="w-4 h-4 ml-0.5" />
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-400 hover:text-white border border-slate-700/60 font-medium text-xs transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Switch Account</span>
+              </button>
+            </div>
+          ) : (
+            <>
+              <Link
+                href="/register"
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors shadow-sm"
+              >
+                Create Account
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link
+                href="/login"
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 font-medium text-sm transition-colors"
+              >
+                Sign In
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
