@@ -113,24 +113,26 @@ export default function Navbar() {
         {currentUser && (
           <Link
             href="/chat"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors ${
               pathname === '/chat'
                 ? 'bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
             }`}
+            title="Encrypted Chat Workspace"
           >
             <MessageSquare className="w-4 h-4 text-emerald-400" />
-            <span>Chat</span>
+            <span className="hidden sm:inline">Chat</span>
           </Link>
         )}
 
         <Link
           href="/verify-key"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors ${
+          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors ${
             pathname === '/verify-key'
               ? 'bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30'
               : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
           }`}
+          title="Verify Contact Safety Numbers"
         >
           <KeyRound className="w-4 h-4 text-emerald-400" />
           <span className="hidden sm:inline">Verify Keys</span>
@@ -144,6 +146,7 @@ export default function Navbar() {
                 ? 'bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
             }`}
+            title="Cryptographic Settings"
           >
             <Settings className="w-4 h-4 text-emerald-400" />
             <span>Settings</span>
@@ -154,24 +157,25 @@ export default function Navbar() {
         {currentUser?.role === 'admin' && (
           <Link
             href="/admin"
-            className={`flex items-center gap-1 text-[11px] px-2.5 py-1.5 rounded-lg font-semibold transition-colors ${
+            className={`flex items-center gap-1 text-[11px] px-2 py-1.5 rounded-lg font-semibold transition-colors ${
               pathname.startsWith('/admin')
                 ? 'bg-purple-950/80 text-purple-300 border border-purple-700/80'
                 : 'bg-purple-950/40 text-purple-400 border border-purple-900/50 hover:bg-purple-900/50 hover:text-purple-200'
             }`}
+            title="Admin Security Center"
           >
             <Shield className="w-3.5 h-3.5 text-purple-400" />
-            <span>Admin</span>
+            <span className="hidden sm:inline">Admin</span>
           </Link>
         )}
 
         {/* Dynamic User Authentication State */}
         {isMounted && currentUser ? (
-          <div className="flex items-center gap-1.5 sm:gap-2 pl-2 ml-1 border-l border-slate-800">
+          <div className="flex items-center gap-1 sm:gap-2 pl-1.5 sm:pl-2 ml-1 border-l border-slate-800">
             {/* Active User Badge */}
             <Link
               href="/profile"
-              className={`flex items-center gap-2 px-2.5 py-1 rounded-xl border transition-colors ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 rounded-xl border transition-colors ${
                 pathname === '/profile'
                   ? 'bg-emerald-950/60 border-emerald-500/50 text-white'
                   : 'bg-slate-900/80 hover:bg-slate-800 border-slate-800 text-slate-200'
@@ -181,7 +185,7 @@ export default function Navbar() {
               <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-[10px]">
                 {getInitials(currentUser.username)}
               </div>
-              <span className="font-semibold text-xs text-white max-w-[100px] truncate">
+              <span className="font-semibold text-xs text-white max-w-[80px] sm:max-w-[100px] truncate hidden sm:inline">
                 @{currentUser.username}
               </span>
             </Link>
