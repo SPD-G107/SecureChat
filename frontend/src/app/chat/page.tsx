@@ -91,6 +91,18 @@ export default function ChatPage() {
       return;
     }
 
+    // Immediately restore cached active contact to prevent any welcome screen flicker on refresh
+    const cachedPeerId = localStorage.getItem(`securechat_active_peer_${parsedUser.id}`);
+    const cachedContactStr = localStorage.getItem(`securechat_active_peer_contact_${parsedUser.id}`);
+    if (cachedPeerId && cachedContactStr) {
+      try {
+        const parsedContact = JSON.parse(cachedContactStr);
+        if (parsedContact && parsedContact.id === cachedPeerId) {
+          setActiveContact(parsedContact);
+        }
+      } catch {}
+    }
+
     // Load user's REAL active conversations from MySQL
     loadActiveConversations(parsedUser);
 
@@ -332,6 +344,17 @@ export default function ChatPage() {
           const found = enriched.find((c) => c.peer_id === savedPeerId);
           if (found && found.contact) {
             setActiveContact(found.contact);
+            localStorage.setItem(`securechat_active_peer_contact_${user.id}`, JSON.stringify(found.contact));
+          } else {
+            const savedContactStr = localStorage.getItem(`securechat_active_peer_contact_${user.id}`);
+            if (savedContactStr) {
+              try {
+                const parsedContact = JSON.parse(savedContactStr);
+                if (parsedContact && parsedContact.id === savedPeerId) {
+                  setActiveContact(parsedContact);
+                }
+              } catch {}
+            }
           }
         }
       }
@@ -397,6 +420,7 @@ export default function ChatPage() {
     setSearchQuery('');
     if (currentUser?.id) {
       localStorage.setItem(`securechat_active_peer_${currentUser.id}`, contact.id);
+      localStorage.setItem(`securechat_active_peer_contact_${currentUser.id}`, JSON.stringify(contact));
     }
 
     // Emit read receipt to contact for this conversation
@@ -406,6 +430,15 @@ export default function ChatPage() {
         senderId: contact.id,
         conversationId: `conv-${contact.id}`,
       });
+    }
+  };
+
+  // Back to conversations list (clears active contact from UI & LocalStorage)
+  const handleBackToConversations = () => {
+    setActiveContact(null);
+    if (currentUser?.id) {
+      localStorage.removeItem(`securechat_active_peer_${currentUser.id}`);
+      localStorage.removeItem(`securechat_active_peer_contact_${currentUser.id}`);
     }
   };
 
@@ -764,18 +797,12 @@ export default function ChatPage() {
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 {/* Mobile Back Button (Returns to conversations list) */}
                 <button
-                  onClick={() => {
-                    setActiveContact(null);
-                    if (currentUser?.id) {
-                      localStorage.removeItem(`securechat_active_peer_${currentUser.id}`);
-                    }
-                  }}
+                  onClick={handleBackToConversations}
                   className="md:hidden p-1.5 -ml-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
                   title="Back to Chats"
                 >
                   <ArrowLeft className="w-5 h-5 text-emerald-400" />
                 </button>
-
                 <div className="relative shrink-0">
                   <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs">
                     {activeContact.avatarInitials}
@@ -849,6 +876,15 @@ export default function ChatPage() {
                   <Shield className="w-3.5 h-3.5 text-emerald-400" />
                   <span className="hidden sm:inline">Verify</span>
                 </Link>
+
+                {/* Desktop Close Chat button */}
+                <button
+                  onClick={handleBackToConversations}
+                  className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  title="Close active chat"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
