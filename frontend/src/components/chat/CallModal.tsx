@@ -11,7 +11,7 @@ import {
   MicOff,
   RefreshCw,
   ShieldCheck,
-  User as UserIcon,
+  Maximize2,
 } from 'lucide-react';
 import { Contact } from '@/types';
 
@@ -48,29 +48,52 @@ export default function CallModal({
   onToggleCamera,
   onFlipCamera,
 }: CallModalProps) {
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const mainVideoRef = useRef<HTMLVideoElement>(null);
+  const pipVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [duration, setDuration] = useState(0);
+  const [isSwapped, setIsSwapped] = useState(false);
 
-  // Bind local stream to local preview video element
+  // Reset swap view when call ends
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
+    if (callState === 'idle') {
+      setIsSwapped(false);
     }
-  }, [localStream, callState]);
+  }, [callState]);
 
-  // Bind remote stream to remote video and audio element
+  // Bind remote audio stream to dedicated HTML5 audio element
   useEffect(() => {
-    if (remoteStream) {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-      }
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = remoteStream;
-      }
+    if (remoteStream && remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch((err) => {
+        console.warn('[CallModal] Remote audio play error:', err);
+      });
     }
   }, [remoteStream, callState]);
+
+  // Bind video streams to main and picture-in-picture video elements
+  useEffect(() => {
+    const mainStream = isSwapped ? localStream : remoteStream;
+    const pipStream = isSwapped ? remoteStream : localStream;
+
+    if (mainVideoRef.current) {
+      mainVideoRef.current.srcObject = mainStream || null;
+      if (mainStream) {
+        mainVideoRef.current.play().catch((err) => {
+          console.warn('[CallModal] Main video play error:', err);
+        });
+      }
+    }
+
+    if (pipVideoRef.current) {
+      pipVideoRef.current.srcObject = pipStream || null;
+      if (pipStream) {
+        pipVideoRef.current.play().catch((err) => {
+          console.warn('[CallModal] PiP video play error:', err);
+        });
+      }
+    }
+  }, [localStream, remoteStream, isSwapped, callState]);
 
   // Call duration timer
   useEffect(() => {
@@ -95,6 +118,18 @@ export default function CallModal({
     const s = secs % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
+
+  const hasRemoteVideo = Boolean(
+    remoteStream &&
+    remoteStream.getVideoTracks().length > 0 &&
+    remoteStream.getVideoTracks().some((t) => t.enabled)
+  );
+
+  const hasLocalVideo = Boolean(
+    localStream &&
+    localStream.getVideoTracks().length > 0 &&
+    !isCameraOff
+  );
 
   // 1. Incoming Call Floating Overlay (When recipient receives a call)
   if (callState === 'incoming') {
@@ -186,8 +221,21 @@ export default function CallModal({
             </div>
           </div>
 
-          <div className="text-xs text-slate-400 hidden sm:flex items-center gap-1.5 font-mono">
-            <span>WebRTC DTLS-SRTP</span>
+          <div className="flex items-center gap-2">
+            {isVideo && (
+              <button
+                onClick={() => setIsSwapped((prev) => !prev)}
+                type="button"
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Swap primary and corner views"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Swap View</span>
+              </button>
+            )}
+            <div className="text-xs text-slate-400 hidden sm:flex items-center gap-1.5 font-mono">
+              <span>WebRTC DTLS-SRTP</span>
+            </div>
           </div>
         </div>
 
@@ -195,23 +243,24 @@ export default function CallModal({
         <div className="flex-1 relative bg-slate-950 flex items-center justify-center overflow-hidden min-h-0">
           {isVideo ? (
             <>
-              {/* Remote Video Stream (Main Window) */}
+              {/* Primary Video Window (Muted so browser never blocks autoplay) */}
               <video
-                ref={remoteVideoRef}
+                ref={mainVideoRef}
                 autoPlay
                 playsInline
-                className="w-full h-full object-cover"
+                muted
+                className="w-full h-full object-cover bg-black"
               />
 
-              {/* Placeholder when remote video is not yet received */}
-              {(!remoteStream || remoteStream.getVideoTracks().length === 0) && (
+              {/* Placeholder when primary video stream has no active track */}
+              {((!isSwapped && !hasRemoteVideo) || (isSwapped && !hasLocalVideo)) && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 text-center space-y-4 p-6 z-10">
                   <div className="relative">
                     <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden bg-slate-800 border-4 border-emerald-500/80 shadow-2xl flex items-center justify-center text-3xl font-bold text-white">
-                      {peer.avatarUrl ? (
+                      {!isSwapped && peer.avatarUrl ? (
                         <img src={peer.avatarUrl} alt={peer.displayName || peer.username} className="w-full h-full object-cover" />
                       ) : (
-                        <span>{peer.avatarInitials || peer.username.slice(0, 2).toUpperCase()}</span>
+                        <span>{!isSwapped ? (peer.avatarInitials || peer.username.slice(0, 2).toUpperCase()) : 'YOU'}</span>
                       )}
                     </div>
                     {callState === 'calling' && (
@@ -219,31 +268,51 @@ export default function CallModal({
                     )}
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-lg font-bold text-white">{peer.displayName || `@${peer.username}`}</h4>
+                    <h4 className="text-lg font-bold text-white">
+                      {!isSwapped ? (peer.displayName || `@${peer.username}`) : 'Your Camera'}
+                    </h4>
                     <p className="text-xs text-slate-400 font-mono">
-                      {callState === 'calling' ? 'Ringing...' : 'Connecting secure video feed...'}
+                      {callState === 'calling'
+                        ? 'Ringing...'
+                        : !isSwapped
+                        ? 'Connecting secure video feed...'
+                        : 'Camera is currently off'}
                     </p>
                   </div>
                 </div>
               )}
 
-              {/* Local Video Stream (Floating Picture-in-Picture window) */}
-              {localStream && (
-                <div className="absolute bottom-24 right-4 sm:bottom-24 sm:right-6 w-28 sm:w-44 aspect-video rounded-xl sm:rounded-2xl overflow-hidden border-2 border-emerald-500/70 shadow-2xl bg-slate-900 z-20 transition-all">
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                  {isCameraOff && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-slate-900/90 text-[10px] text-slate-400 font-mono">
-                      Camera Off
-                    </div>
-                  )}
+              {/* Picture-in-Picture Floating Window (Click to swap views) */}
+              <div
+                onClick={() => setIsSwapped((prev) => !prev)}
+                className="absolute bottom-24 right-4 sm:bottom-24 sm:right-6 w-32 sm:w-48 aspect-video rounded-xl sm:rounded-2xl overflow-hidden border-2 border-emerald-500/80 shadow-2xl bg-slate-900 z-20 transition-transform hover:scale-105 active:scale-95 cursor-pointer group"
+                title="Click to swap views"
+              >
+                <video
+                  ref={pipVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover bg-black"
+                />
+
+                {/* PiP Overlay when stream has no video */}
+                {((!isSwapped && !hasLocalVideo) || (isSwapped && !hasRemoteVideo)) && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-slate-900/90 text-[10px] text-slate-300 font-mono p-2 text-center">
+                    {!isSwapped ? 'Camera Off' : 'Waiting...'}
+                  </div>
+                )}
+
+                {/* Pill label */}
+                <div className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium bg-black/70 text-white backdrop-blur-md flex items-center gap-1 pointer-events-none">
+                  <span>{!isSwapped ? 'You' : peer.displayName || peer.username}</span>
                 </div>
-              )}
+
+                {/* Swap Icon Badge on Hover */}
+                <div className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white group-hover:bg-emerald-600 transition-colors pointer-events-none">
+                  <RefreshCw className="w-3 h-3" />
+                </div>
+              </div>
             </>
           ) : (
             /* Audio Call Centered Stage */
