@@ -219,7 +219,6 @@ export default function ChatPage() {
       { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:stun.cloudflare.com:3478' },
     ],
-    iceCandidatePoolSize: 10,
   };
 
   const cleanupCall = () => {
@@ -310,6 +309,11 @@ export default function ChatPage() {
     // Receive remote media tracks directly from the browser's native WebRTC stream
     pc.ontrack = (event) => {
       console.log('[WebRTC] Received remote track:', event.track.kind, event.track.id);
+      event.track.onunmute = () => {
+        console.log('[WebRTC] Remote track unmuted:', event.track.kind);
+        setStreamVersion((v) => v + 1);
+      };
+
       if (event.streams && event.streams[0]) {
         remoteMediaStreamRef.current = event.streams[0];
         setRemoteStream(event.streams[0]);
@@ -942,10 +946,7 @@ export default function ChatPage() {
         const pc = createPeerConnection(data.recipientId);
 
         try {
-          const offer = await pc.createOffer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: isCallVideoRef.current,
-          });
+          const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           socket.emit('call:signal', {
             targetUserId: data.recipientId,
@@ -981,24 +982,12 @@ export default function ChatPage() {
         try {
           if (data.type === 'offer') {
             let pc = peerConnectionRef.current;
-            if (!pc && activeCallPeerRef.current) {
-              pc = createPeerConnection(activeCallPeerRef.current.id);
+            if (!pc) {
+              pc = createPeerConnection(data.senderId);
             }
             if (!pc) return;
 
             await pc.setRemoteDescription(new RTCSessionDescription(data.signalData));
-
-            // Drain buffered early candidates
-            while (pendingCandidatesRef.current.length > 0) {
-              const cand = pendingCandidatesRef.current.shift();
-              if (cand && cand.candidate) {
-                try {
-                  await pc.addIceCandidate(new RTCIceCandidate(cand));
-                } catch (e) {
-                  console.warn('[WebRTC] Buffered candidate error on offer:', e);
-                }
-              }
-            }
 
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
@@ -1011,20 +1000,40 @@ export default function ChatPage() {
               },
               type: 'answer',
             });
+
+            // Drain buffered early candidates AFTER localDescription (answer) is set
+            while (pendingCandidatesRef.current.length > 0) {
+              const cand = pendingCandidatesRef.current.shift();
+              if (cand && cand.candidate) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch {
+                  try {
+                    await pc.addIceCandidate(cand);
+                  } catch (e) {
+                    console.warn('[WebRTC] Buffered candidate error on offer:', e);
+                  }
+                }
+              }
+            }
           } else if (data.type === 'answer') {
             const pc = peerConnectionRef.current;
             if (!pc) return;
 
             await pc.setRemoteDescription(new RTCSessionDescription(data.signalData));
 
-            // Drain buffered candidates
+            // Drain buffered candidates AFTER localDescription & remoteDescription are both set
             while (pendingCandidatesRef.current.length > 0) {
               const cand = pendingCandidatesRef.current.shift();
               if (cand && cand.candidate) {
                 try {
                   await pc.addIceCandidate(new RTCIceCandidate(cand));
-                } catch (e) {
-                  console.warn('[WebRTC] Buffered candidate error on answer:', e);
+                } catch {
+                  try {
+                    await pc.addIceCandidate(cand);
+                  } catch (e) {
+                    console.warn('[WebRTC] Buffered candidate error on answer:', e);
+                  }
                 }
               }
             }
@@ -1034,8 +1043,12 @@ export default function ChatPage() {
               if (pc && pc.remoteDescription && pc.remoteDescription.type) {
                 try {
                   await pc.addIceCandidate(new RTCIceCandidate(data.signalData));
-                } catch (e) {
-                  console.warn('[WebRTC] Live candidate add error:', e);
+                } catch {
+                  try {
+                    await pc.addIceCandidate(data.signalData);
+                  } catch (e) {
+                    console.warn('[WebRTC] Live candidate add error:', e);
+                  }
                 }
               } else {
                 pendingCandidatesRef.current.push(data.signalData);
@@ -3168,6 +3181,7 @@ export default function ChatPage() {
         remoteStream={remoteStream}
         streamVersion={streamVersion}
         iceConnectionState={iceConnectionState}
+        peerConnectionState={peerConnectionState}
         isMuted={isMuted}
         isCameraOff={isCameraOff}
         onAccept={acceptIncomingCall}

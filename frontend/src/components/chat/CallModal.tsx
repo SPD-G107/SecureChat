@@ -26,6 +26,7 @@ interface CallModalProps {
   remoteStream: MediaStream | null;
   streamVersion?: number;
   iceConnectionState?: string;
+  peerConnectionState?: string;
   isMuted: boolean;
   isCameraOff: boolean;
   onAccept: () => void;
@@ -44,6 +45,7 @@ export default function CallModal({
   remoteStream,
   streamVersion = 0,
   iceConnectionState = 'new',
+  peerConnectionState = 'new',
   isMuted,
   isCameraOff,
   onAccept,
@@ -91,22 +93,26 @@ export default function CallModal({
     const mainStream = isSwapped ? localStream : remoteStream;
     const pipStream = isSwapped ? remoteStream : localStream;
 
-    if (mainVideoRef.current && mainVideoRef.current.srcObject !== mainStream) {
-      mainVideoRef.current.srcObject = mainStream || null;
-    }
-    if (mainStream && mainVideoRef.current) {
-      mainVideoRef.current.play().catch((err) => {
-        console.warn('[CallModal] Main video play error:', err);
-      });
+    if (mainVideoRef.current) {
+      if (mainVideoRef.current.srcObject !== mainStream) {
+        mainVideoRef.current.srcObject = mainStream || null;
+      }
+      if (mainStream) {
+        mainVideoRef.current.play().catch((err) => {
+          console.warn('[CallModal] Main video play error:', err);
+        });
+      }
     }
 
-    if (pipVideoRef.current && pipVideoRef.current.srcObject !== pipStream) {
-      pipVideoRef.current.srcObject = pipStream || null;
-    }
-    if (pipStream && pipVideoRef.current) {
-      pipVideoRef.current.play().catch((err) => {
-        console.warn('[CallModal] PiP video play error:', err);
-      });
+    if (pipVideoRef.current) {
+      if (pipVideoRef.current.srcObject !== pipStream) {
+        pipVideoRef.current.srcObject = pipStream || null;
+      }
+      if (pipStream) {
+        pipVideoRef.current.play().catch((err) => {
+          console.warn('[CallModal] PiP video play error:', err);
+        });
+      }
     }
   }, [localStream, remoteStream, streamVersion, isSwapped, callState]);
 
@@ -250,22 +256,22 @@ export default function CallModal({
             )}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/80 text-[11px] font-mono">
               <span className={`w-2 h-2 rounded-full ${
-                iceConnectionState === 'connected' || iceConnectionState === 'completed'
+                iceConnectionState === 'connected' || iceConnectionState === 'completed' || peerConnectionState === 'connected'
                   ? 'bg-emerald-400 animate-pulse'
-                  : iceConnectionState === 'failed' || iceConnectionState === 'disconnected'
+                  : iceConnectionState === 'failed' || peerConnectionState === 'failed'
                   ? 'bg-red-500'
                   : 'bg-amber-400 animate-ping'
               }`} />
               <span className={
-                iceConnectionState === 'connected' || iceConnectionState === 'completed'
+                iceConnectionState === 'connected' || iceConnectionState === 'completed' || peerConnectionState === 'connected'
                   ? 'text-emerald-400 font-semibold'
-                  : iceConnectionState === 'failed'
+                  : iceConnectionState === 'failed' || peerConnectionState === 'failed'
                   ? 'text-red-400 font-semibold'
                   : 'text-amber-400'
               }>
-                {iceConnectionState === 'connected' || iceConnectionState === 'completed'
+                {iceConnectionState === 'connected' || iceConnectionState === 'completed' || peerConnectionState === 'connected'
                   ? 'E2EE Connected'
-                  : iceConnectionState === 'failed'
+                  : iceConnectionState === 'failed' || peerConnectionState === 'failed'
                   ? 'Connection Failed'
                   : 'Connecting P2P...'}
               </span>
