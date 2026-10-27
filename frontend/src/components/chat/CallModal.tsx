@@ -24,6 +24,8 @@ interface CallModalProps {
   isVideo: boolean;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  streamVersion?: number;
+  iceConnectionState?: string;
   isMuted: boolean;
   isCameraOff: boolean;
   onAccept: () => void;
@@ -40,6 +42,8 @@ export default function CallModal({
   isVideo,
   localStream,
   remoteStream,
+  streamVersion = 0,
+  iceConnectionState = 'new',
   isMuted,
   isCameraOff,
   onAccept,
@@ -67,7 +71,9 @@ export default function CallModal({
   // Bind remote audio stream to dedicated HTML5 audio element
   useEffect(() => {
     if (remoteStream && remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = remoteStream;
+      if (remoteAudioRef.current.srcObject !== remoteStream) {
+        remoteAudioRef.current.srcObject = remoteStream;
+      }
       remoteAudioRef.current.muted = false;
       remoteAudioRef.current.volume = 1.0;
       remoteAudioRef.current
@@ -78,31 +84,31 @@ export default function CallModal({
           setAudioBlocked(true);
         });
     }
-  }, [remoteStream, callState]);
+  }, [remoteStream, streamVersion, callState]);
 
   // Bind video streams to main and picture-in-picture video elements
   useEffect(() => {
     const mainStream = isSwapped ? localStream : remoteStream;
     const pipStream = isSwapped ? remoteStream : localStream;
 
-    if (mainVideoRef.current) {
+    if (mainVideoRef.current && mainVideoRef.current.srcObject !== mainStream) {
       mainVideoRef.current.srcObject = mainStream || null;
-      if (mainStream) {
-        mainVideoRef.current.play().catch((err) => {
-          console.warn('[CallModal] Main video play error:', err);
-        });
-      }
+    }
+    if (mainStream && mainVideoRef.current) {
+      mainVideoRef.current.play().catch((err) => {
+        console.warn('[CallModal] Main video play error:', err);
+      });
     }
 
-    if (pipVideoRef.current) {
+    if (pipVideoRef.current && pipVideoRef.current.srcObject !== pipStream) {
       pipVideoRef.current.srcObject = pipStream || null;
-      if (pipStream) {
-        pipVideoRef.current.play().catch((err) => {
-          console.warn('[CallModal] PiP video play error:', err);
-        });
-      }
     }
-  }, [localStream, remoteStream, isSwapped, callState]);
+    if (pipStream && pipVideoRef.current) {
+      pipVideoRef.current.play().catch((err) => {
+        console.warn('[CallModal] PiP video play error:', err);
+      });
+    }
+  }, [localStream, remoteStream, streamVersion, isSwapped, callState]);
 
   // Call duration timer
   useEffect(() => {
@@ -242,8 +248,27 @@ export default function CallModal({
                 <span className="hidden sm:inline">Swap View</span>
               </button>
             )}
-            <div className="text-xs text-slate-400 hidden sm:flex items-center gap-1.5 font-mono">
-              <span>WebRTC DTLS-SRTP</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/80 text-[11px] font-mono">
+              <span className={`w-2 h-2 rounded-full ${
+                iceConnectionState === 'connected' || iceConnectionState === 'completed'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : iceConnectionState === 'failed' || iceConnectionState === 'disconnected'
+                  ? 'bg-red-500'
+                  : 'bg-amber-400 animate-ping'
+              }`} />
+              <span className={
+                iceConnectionState === 'connected' || iceConnectionState === 'completed'
+                  ? 'text-emerald-400 font-semibold'
+                  : iceConnectionState === 'failed'
+                  ? 'text-red-400 font-semibold'
+                  : 'text-amber-400'
+              }>
+                {iceConnectionState === 'connected' || iceConnectionState === 'completed'
+                  ? 'E2EE Connected'
+                  : iceConnectionState === 'failed'
+                  ? 'Connection Failed'
+                  : 'Connecting P2P...'}
+              </span>
             </div>
           </div>
         </div>

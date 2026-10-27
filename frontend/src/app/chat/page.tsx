@@ -133,6 +133,9 @@ export default function ChatPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [iceConnectionState, setIceConnectionState] = useState<string>('new');
+  const [peerConnectionState, setPeerConnectionState] = useState<string>('new');
+  const [streamVersion, setStreamVersion] = useState<number>(0);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -208,29 +211,13 @@ export default function ChatPage() {
 
   const RTC_CONFIG: RTCConfiguration = {
     iceServers: [
-      // STUN servers
+      // Globally accessible ultra-fast STUN servers
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:openrelay.metered.ca:80' },
-      // Free Public TURN Relays (Open Relay Project by Metered)
-      // Bypasses Symmetric NAT, Carrier-Grade NAT (CGNAT on 4G/5G mobile carriers), and strict firewalls
-      {
-        urls: 'turn:openrelay.metered.ca:80',
-        username: 'openrelayproject',
-        credential: 'openrelayproject',
-      },
-      {
-        urls: 'turn:openrelay.metered.ca:443',
-        username: 'openrelayproject',
-        credential: 'openrelayproject',
-      },
-      {
-        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-        username: 'openrelayproject',
-        credential: 'openrelayproject',
-      },
     ],
     iceCandidatePoolSize: 10,
   };
@@ -256,6 +243,9 @@ export default function ChatPage() {
     setCallState('idle');
     setIsMuted(false);
     setIsCameraOff(false);
+    setIceConnectionState('new');
+    setPeerConnectionState('new');
+    setStreamVersion(0);
   };
 
   const getMediaStream = async (video: boolean, facing: 'user' | 'environment' = 'user'): Promise<MediaStream> => {
@@ -317,13 +307,12 @@ export default function ChatPage() {
       }
     };
 
-    // Receive remote media tracks and construct fresh stream
+    // Receive remote media tracks directly from the browser's native WebRTC stream
     pc.ontrack = (event) => {
       console.log('[WebRTC] Received remote track:', event.track.kind, event.track.id);
-      const stream = (event.streams && event.streams[0]) ? event.streams[0] : null;
-      if (stream) {
-        remoteMediaStreamRef.current = stream;
-        setRemoteStream(new MediaStream(stream.getTracks()));
+      if (event.streams && event.streams[0]) {
+        remoteMediaStreamRef.current = event.streams[0];
+        setRemoteStream(event.streams[0]);
       } else {
         if (!remoteMediaStreamRef.current) {
           remoteMediaStreamRef.current = new MediaStream();
@@ -334,16 +323,24 @@ export default function ChatPage() {
           cur.removeTrack(existing);
         }
         cur.addTrack(event.track);
-        setRemoteStream(new MediaStream(cur.getTracks()));
+        setRemoteStream(cur);
       }
+      setStreamVersion((v) => v + 1);
     };
 
     pc.oniceconnectionstatechange = () => {
       console.log('[WebRTC] ICE connection state:', pc.iceConnectionState);
+      setIceConnectionState(pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        try {
+          pc.restartIce();
+        } catch {}
+      }
     };
 
     pc.onconnectionstatechange = () => {
       console.log('[WebRTC] Connection state:', pc.connectionState);
+      setPeerConnectionState(pc.connectionState);
     };
 
     // Attach local stream tracks to PeerConnection
@@ -3169,6 +3166,8 @@ export default function ChatPage() {
         isVideo={isCallVideo}
         localStream={localStream}
         remoteStream={remoteStream}
+        streamVersion={streamVersion}
+        iceConnectionState={iceConnectionState}
         isMuted={isMuted}
         isCameraOff={isCameraOff}
         onAccept={acceptIncomingCall}
