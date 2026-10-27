@@ -685,6 +685,10 @@ docker compose up --build
    - Tap the picture-in-picture (PiP) video preview or header button to swap between the primary camera view and the corner window.
    - Dynamic real-time connection status pill (`🟢 E2EE Connected`, `🟡 Connecting P2P...`, `🔴 Connection Failed`).
    - Camera flip support for dual-camera smartphones, microphone mute toggle, and camera privacy shutter.
+4. **Symmetric NAT & 4G/5G Traversal with Self-Hosted Coturn Relay**:
+   - Primary connectivity leverages ultra-fast Google and Cloudflare STUN nodes for direct zero-latency P2P DTLS-SRTP streams on local Wi-Fi and cone NAT networks.
+   - For restricted mobile networks (4G/5G Carrier-Grade Symmetric NAT) where direct UDP traversal is dropped, a dedicated self-hosted Coturn TURN relay is deployed via `docker-compose.yml` (`turn:3.16.212.72:3478`), supporting both UDP and TCP relay transports with zero third-party cloud API dependencies.
+
 
 
 
