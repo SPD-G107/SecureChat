@@ -18,7 +18,10 @@ export const app = express();
 app.use(helmet());
 app.use(
   cors({
-    origin: ENV.CORS_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow all origins (local, IP, or domain) in development and deployment
+      callback(null, true);
+    },
     credentials: true,
   })
 );

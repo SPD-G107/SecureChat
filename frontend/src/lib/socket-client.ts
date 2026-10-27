@@ -1,13 +1,25 @@
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+const getSocketUrl = (): string => {
+  if (process.env.NEXT_PUBLIC_SOCKET_URL && !process.env.NEXT_PUBLIC_SOCKET_URL.includes('localhost:5000')) {
+    return process.env.NEXT_PUBLIC_SOCKET_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname, port } = window.location;
+    if (port === '3000') {
+      return `${protocol}//${hostname}:5000`;
+    }
+    return `${protocol}//${hostname}`;
+  }
+  return process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+};
 
 let socket: Socket | null = null;
 
 export const getSocket = (): Socket => {
   if (!socket && typeof window !== 'undefined') {
     const token = localStorage.getItem('securechat_jwt');
-    socket = io(SOCKET_URL, {
+    socket = io(getSocketUrl(), {
       auth: { token },
       autoConnect: false,
     });
