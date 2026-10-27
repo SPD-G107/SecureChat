@@ -38,6 +38,30 @@ router.get('/:id/public-key', async (req: AuthenticatedRequest, res: Response): 
   }
 });
 
+// Retrieve single user details by ID
+router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const user = await UserRepository.findById(id);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.display_name || user.username,
+        avatarUrl: user.avatar_url,
+        role: user.role,
+        status: user.status,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve user' });
+  }
+});
+
 // Update display name / profile
 router.patch('/profile', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
