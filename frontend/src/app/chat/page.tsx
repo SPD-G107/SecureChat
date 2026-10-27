@@ -26,6 +26,9 @@ import {
   ArrowLeft,
   Pencil,
   Trash2,
+  MoreVertical,
+  CheckCircle2,
+  Eraser,
 } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
@@ -86,6 +89,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [isChatMenuOpen, setIsChatMenuOpen] = useState(false);
 
   // Real Socket.IO Presence Tracking
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -712,6 +716,7 @@ export default function ChatPage() {
     setActiveContact(contact);
     activeContactRef.current = contact;
     setIsNewChatModalOpen(false);
+    setIsChatMenuOpen(false);
     setSearchQuery('');
     setUnreadCounts((prev) => ({ ...prev, [contact.id]: 0 }));
     if (currentUser?.id) {
@@ -733,6 +738,7 @@ export default function ChatPage() {
   const handleBackToConversations = () => {
     setActiveContact(null);
     activeContactRef.current = null;
+    setIsChatMenuOpen(false);
     if (currentUser?.id) {
       localStorage.removeItem(`securechat_active_peer_${currentUser.id}`);
       localStorage.removeItem(`securechat_active_peer_contact_${currentUser.id}`);
@@ -1150,7 +1156,7 @@ export default function ChatPage() {
   return (
     <div className="flex-1 flex overflow-hidden h-[calc(100dvh-3.5rem)] max-h-[calc(100dvh-3.5rem)] min-h-0 bg-[#0b0f19]">
       {/* Sidebar: Active Conversations (Telegram / Signal style) */}
-      <aside className={`${activeContact ? 'hidden md:flex' : 'flex'} w-full md:w-80 bg-slate-900/40 border-r border-slate-800 flex-col shrink-0 h-full max-h-full min-h-0 overflow-hidden`}>
+      <aside className={`${activeContact ? 'hidden md:flex' : 'flex'} w-full md:w-72 lg:w-80 bg-slate-900/40 border-r border-slate-800 flex-col shrink-0 h-full max-h-full min-h-0 overflow-hidden`}>
         {/* Sidebar Header & Start New Chat Button */}
         <div className="p-3.5 border-b border-slate-800 shrink-0">
           <div className="flex items-center justify-between mb-2.5">
@@ -1318,8 +1324,8 @@ export default function ChatPage() {
         {activeContact ? (
           <>
             {/* Chat Header */}
-            <div className="px-3 sm:px-6 py-2.5 sm:py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 {/* Mobile Back Button (Returns to conversations list) */}
                 <button
                   onClick={handleBackToConversations}
@@ -1328,8 +1334,10 @@ export default function ChatPage() {
                 >
                   <ArrowLeft className="w-5 h-5 text-emerald-400" />
                 </button>
+
+                {/* Peer Avatar with Live Online Dot */}
                 <div className="relative shrink-0">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs shrink-0 overflow-hidden">
+                  <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs shrink-0 overflow-hidden">
                     {activeContact.avatarUrl ? (
                       <img src={activeContact.avatarUrl} alt={activeContact.displayName} className="w-full h-full object-cover" />
                     ) : (
@@ -1341,102 +1349,179 @@ export default function ChatPage() {
                   )}
                 </div>
 
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <h2 className="text-xs sm:text-sm font-bold text-white truncate max-w-[110px] sm:max-w-[200px]">
+                {/* Peer Name, Verified Badge, and Online / E2EE Subtitle */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h2 className="text-sm font-bold text-white truncate max-w-[130px] sm:max-w-[200px] md:max-w-[240px] lg:max-w-xs">
                       {activeContact.displayName}
                     </h2>
-                    <span className="text-slate-400 text-[11px] sm:text-xs font-normal hidden sm:inline">
-                      (@{activeContact.username})
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800 text-[9px] sm:text-[10px] font-mono shrink-0">
-                      <ShieldCheck className="w-3 h-3" />
-                      <span className="hidden sm:inline">E2EE Active</span>
-                      <span className="sm:hidden">E2EE</span>
-                    </span>
 
-                    {/* Verified Badge if marked as verified */}
+                    {/* Verified Identity Checkmark */}
                     {isPeerVerified && (
-                      <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] sm:text-[10px] font-medium shrink-0 animate-in fade-in" title="Safety Number Verified & Trusted">
-                        <Check className="w-3 h-3 text-emerald-400" />
-                        <span className="hidden sm:inline">Verified Contact</span>
-                        <span className="sm:hidden">Verified</span>
+                      <span title="Verified Safety Key" className="shrink-0 text-emerald-400 flex items-center">
+                        <CheckCircle2 className="w-4 h-4 fill-emerald-500/20 text-emerald-400" />
                       </span>
                     )}
+
+                    {/* Username (hidden on mobile, shown on larger screens) */}
+                    <span className="text-slate-400 text-xs font-normal hidden lg:inline truncate">
+                      (@{activeContact.username})
+                    </span>
+
+                    {/* E2EE Active Pill (Desktop xl only) */}
+                    <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800 text-[10px] font-mono shrink-0">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>E2EE Active</span>
+                    </span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5">
-                    {/* Accurate real-time online / offline indicator */}
-                    <span className="text-[10px] flex items-center gap-1 font-medium shrink-0">
+                  {/* Subtitle: Real-time Online/Offline + E2EE Lock */}
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+                    <span className="flex items-center gap-1.5 text-[11px] font-medium shrink-0">
                       <span className={`w-1.5 h-1.5 rounded-full ${isCurrentPeerOnline ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-                      <span className={isCurrentPeerOnline ? 'text-emerald-400' : 'text-slate-500'}>
-                        {isCurrentPeerOnline ? 'Online' : 'Offline'}
+                      <span className={isCurrentPeerOnline ? 'text-emerald-400' : 'text-slate-400'}>
+                        {isCurrentPeerOnline ? 'online' : 'offline'}
                       </span>
                     </span>
 
-                    <span className="text-slate-600 text-[10px] hidden sm:inline">•</span>
+                    <span className="text-slate-700">•</span>
 
-                    <p className="text-[10px] text-slate-400 font-mono hidden sm:block">
-                      Safety: <span className="text-emerald-400">{activeContact.fingerprint.slice(0, 15)}...</span>
-                    </p>
-                    <button
-                      onClick={handleCopySafetyNumber}
-                      className="text-[10px] text-slate-400 hover:text-white hidden sm:block"
-                      title="Copy safety number"
-                    >
-                      {copiedFingerprint ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    </button>
+                    <span className="inline-flex items-center gap-1 text-[11px] text-emerald-500/90 font-mono shrink-0">
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>E2EE</span>
+                    </span>
+
+                    {/* Safety Fingerprint snippet (Large Desktop only) */}
+                    <div className="hidden 2xl:flex items-center gap-1.5 text-[11px] text-slate-500 font-mono ml-1">
+                      <span>•</span>
+                      <span>Safety: <span className="text-emerald-400">{activeContact.fingerprint.slice(0, 10)}...</span></span>
+                      <button
+                        onClick={handleCopySafetyNumber}
+                        className="text-slate-400 hover:text-white transition-colors"
+                        title="Copy safety number"
+                      >
+                        {copiedFingerprint ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                {/* Ciphertext / Plaintext Toggle */}
+              {/* Action Buttons & Responsive Overflow Menu */}
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 relative">
+                {/* Ciphertext / Plaintext Toggle (Quick icon button) */}
                 <button
                   onClick={() => setShowCiphertext(!showCiphertext)}
-                  className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
                     showCiphertext
                       ? 'bg-emerald-600 text-white border-emerald-500'
                       : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white'
                   }`}
                   title={showCiphertext ? 'Show Plaintext' : 'Inspect Ciphertext'}
                 >
-                  {showCiphertext ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 text-emerald-400" />}
-                  <span className="hidden sm:inline">{showCiphertext ? 'Plaintext' : 'Ciphertext'}</span>
+                  {showCiphertext ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4 text-emerald-400" />}
+                  <span className="hidden xl:inline">{showCiphertext ? 'Plaintext' : 'Ciphertext'}</span>
                 </button>
 
-                {/* Public-Key Verification Link */}
-                <Link
-                  href={`/verify-key?user=${activeContact.username}`}
-                  className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs border transition-colors font-medium ${
-                    isPeerVerified
-                      ? 'bg-emerald-950 text-emerald-300 border-emerald-600'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                  }`}
-                  title={isPeerVerified ? 'Safety Number Verified & Trusted' : 'Verify Safety Key'}
-                >
-                  <ShieldCheck className={`w-3.5 h-3.5 ${isPeerVerified ? 'text-emerald-400' : 'text-slate-400'}`} />
-                  <span className="hidden sm:inline">{isPeerVerified ? 'Verified ✓' : 'Verify'}</span>
-                </Link>
+                {/* Desktop Full Actions (xl: 1280px+) */}
+                <div className="hidden xl:flex items-center gap-2">
+                  <Link
+                    href={`/verify-key?user=${activeContact.username}`}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors font-medium ${
+                      isPeerVerified
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-600'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                    }`}
+                    title={isPeerVerified ? 'Safety Number Verified & Trusted' : 'Verify Safety Key'}
+                  >
+                    <ShieldCheck className={`w-3.5 h-3.5 ${isPeerVerified ? 'text-emerald-400' : 'text-slate-400'}`} />
+                    <span>{isPeerVerified ? 'Verified ✓' : 'Verify'}</span>
+                  </Link>
 
-                {/* Clear Chat History button */}
-                <button
-                  onClick={handleClearChat}
-                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700"
-                  title="Clear conversation message history"
-                >
-                  <span className="hidden sm:inline">Clear Chat</span>
-                </button>
+                  <button
+                    onClick={handleClearChat}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700"
+                    title="Clear conversation message history"
+                  >
+                    <Eraser className="w-3.5 h-3.5" />
+                    <span>Clear</span>
+                  </button>
 
-                {/* Delete Entire Conversation button */}
-                <button
-                  onClick={() => handleDeleteConversation()}
-                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-red-950/40 hover:bg-red-900/60 text-red-300 hover:text-red-200 border-red-900/50 hover:border-red-600"
-                  title="Delete conversation from sidebar and database"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Delete Chat</span>
-                </button>
+                  <button
+                    onClick={() => handleDeleteConversation()}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-red-950/40 hover:bg-red-900/60 text-red-300 hover:text-red-200 border-red-900/50 hover:border-red-600"
+                    title="Delete conversation from sidebar and database"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+
+                {/* Mobile & Tablet 3-Dots Overflow Menu (< xl) */}
+                <div className="xl:hidden relative">
+                  <button
+                    onClick={() => setIsChatMenuOpen(!isChatMenuOpen)}
+                    className="p-1.5 sm:p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
+                    title="More Options"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+
+                  {isChatMenuOpen && (
+                    <>
+                      {/* Transparent backdrop to dismiss on outside tap */}
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsChatMenuOpen(false)}
+                      />
+                      <div className="absolute right-0 top-full mt-2 w-52 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95">
+                        <Link
+                          href={`/verify-key?user=${activeContact.username}`}
+                          onClick={() => setIsChatMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 transition-colors"
+                        >
+                          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                          <span>{isPeerVerified ? 'Safety Key Verified ✓' : 'Verify Safety Key'}</span>
+                        </Link>
+
+                        <button
+                          onClick={() => {
+                            handleCopySafetyNumber();
+                            setIsChatMenuOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 transition-colors text-left"
+                        >
+                          <Copy className="w-4 h-4 text-slate-400" />
+                          <span>Copy Safety Number</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            handleClearChat();
+                            setIsChatMenuOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 transition-colors text-left"
+                        >
+                          <Eraser className="w-4 h-4 text-slate-400" />
+                          <span>Clear Chat History</span>
+                        </button>
+
+                        <div className="h-px bg-slate-800 my-1" />
+
+                        <button
+                          onClick={() => {
+                            handleDeleteConversation();
+                            setIsChatMenuOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-red-400 hover:bg-red-950/40 transition-colors text-left"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-400" />
+                          <span>Delete Conversation</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
 
                 {/* Desktop Close Chat button */}
                 <button
