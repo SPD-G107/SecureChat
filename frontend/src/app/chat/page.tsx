@@ -1018,9 +1018,9 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="flex-1 flex overflow-hidden h-full min-h-0 bg-[#0b0f19]">
+    <div className="flex-1 flex overflow-hidden h-[calc(100dvh-3.5rem)] max-h-[calc(100dvh-3.5rem)] min-h-0 bg-[#0b0f19]">
       {/* Sidebar: Active Conversations (Telegram / Signal style) */}
-      <aside className={`${activeContact ? 'hidden md:flex' : 'flex'} w-full md:w-80 bg-slate-900/40 border-r border-slate-800 flex-col shrink-0 h-full min-h-0 overflow-hidden`}>
+      <aside className={`${activeContact ? 'hidden md:flex' : 'flex'} w-full md:w-80 bg-slate-900/40 border-r border-slate-800 flex-col shrink-0 h-full max-h-full min-h-0 overflow-hidden`}>
         {/* Sidebar Header & Start New Chat Button */}
         <div className="p-3.5 border-b border-slate-800 shrink-0">
           <div className="flex items-center justify-between mb-2.5">
@@ -1184,7 +1184,7 @@ export default function ChatPage() {
       </aside>
 
       {/* Main Chat Workspace */}
-      <section className={`${!activeContact ? 'hidden md:flex' : 'flex'} flex-1 flex-col h-full min-h-0 overflow-hidden bg-[#0b0f19] min-w-0`}>
+      <section className={`${!activeContact ? 'hidden md:flex' : 'flex'} flex-1 flex-col h-full max-h-full min-h-0 overflow-hidden bg-[#0b0f19] min-w-0`}>
         {activeContact ? (
           <>
             {/* Chat Header */}
