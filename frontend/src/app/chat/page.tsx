@@ -1567,15 +1567,15 @@ export default function ChatPage() {
         // 1. Photo / Image Attachment
         if (media.type === 'image' && media.data) {
           return (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 w-full max-w-full min-w-0">
               <div
-                className="relative rounded-xl overflow-hidden cursor-pointer group/img max-w-xs sm:max-w-sm bg-black/40 border border-white/10"
+                className="relative rounded-xl overflow-hidden cursor-pointer group/img w-full max-w-full sm:max-w-sm bg-black/40 border border-white/10"
                 onClick={() => setLightboxImage({ src: media.data, name: media.fileName || 'Encrypted Photo' })}
               >
                 <img
                   src={media.data}
                   alt={media.fileName || 'Encrypted Photo'}
-                  className="w-full h-auto max-h-72 object-cover rounded-xl group-hover/img:scale-[1.02] transition-transform duration-200"
+                  className="w-full h-auto max-h-72 object-cover rounded-xl group-hover/img:scale-[1.02] transition-transform duration-200 max-w-full"
                 />
                 <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-2">
                   <span className="p-2 rounded-full bg-black/60 text-white backdrop-blur-sm">
@@ -1597,11 +1597,11 @@ export default function ChatPage() {
           const formattedDur = `${Math.floor(durSeconds / 60)}:${(durSeconds % 60).toString().padStart(2, '0')}`;
 
           return (
-            <div className="flex items-center gap-3 py-1 px-0.5 min-w-[210px] sm:min-w-[240px]">
+            <div className="flex items-center gap-2 sm:gap-3 py-1 px-0.5 w-full max-w-full min-w-0">
               <button
                 type="button"
                 onClick={() => handlePlayAudio(msg.id, media.data)}
-                className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-md transition-all active:scale-95 ${
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center shrink-0 shadow-md transition-all active:scale-95 ${
                   isOwn ? 'bg-white text-emerald-700 hover:bg-emerald-50' : 'bg-emerald-500 text-white hover:bg-emerald-400'
                 }`}
                 title={isPlaying ? 'Pause voice message' : 'Play voice message'}
@@ -1609,7 +1609,7 @@ export default function ChatPage() {
                 {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
               </button>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1 h-4 mb-1">
+                <div className="flex items-center gap-1 h-3.5 sm:h-4 mb-1">
                   {[40, 75, 55, 90, 60, 80, 45, 95, 70, 50, 85, 65, 40, 70].map((h, i) => (
                     <div
                       key={i}
@@ -1625,7 +1625,7 @@ export default function ChatPage() {
                     />
                   ))}
                 </div>
-                <div className={`flex items-center justify-between text-[11px] font-mono ${isOwn ? 'text-emerald-100' : 'text-slate-400'}`}>
+                <div className={`flex items-center justify-between text-[10px] sm:text-[11px] font-mono ${isOwn ? 'text-emerald-100' : 'text-slate-400'}`}>
                   <span className="flex items-center gap-1">
                     <Mic className="w-3 h-3" /> Voice Note
                   </span>
@@ -1645,12 +1645,12 @@ export default function ChatPage() {
             : 'File';
 
           return (
-            <div className="space-y-1">
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/20 border border-white/10 min-w-[210px] sm:min-w-[250px]">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+            <div className="space-y-1 w-full max-w-full min-w-0">
+              <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-xl bg-black/20 border border-white/10 w-full max-w-full min-w-0">
+                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shrink-0 ${
                   isOwn ? 'bg-white/20 text-white' : 'bg-emerald-500/20 text-emerald-400'
                 }`}>
-                  <FileText className="w-5 h-5" />
+                  <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold truncate text-white" title={media.fileName}>
@@ -1663,7 +1663,7 @@ export default function ChatPage() {
                 <a
                   href={media.data}
                   download={media.fileName || 'attachment'}
-                  className={`p-2 rounded-lg transition-colors shrink-0 ${
+                  className={`p-1.5 sm:p-2 rounded-lg transition-colors shrink-0 ${
                     isOwn ? 'hover:bg-white/20 text-white' : 'hover:bg-slate-800 text-emerald-400'
                   }`}
                   title="Download file"
@@ -1684,7 +1684,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden h-[calc(100dvh-3.5rem)] max-h-[calc(100dvh-3.5rem)] min-h-0 bg-[#0b0f19]">
+    <div className="flex-1 flex overflow-hidden overflow-x-hidden h-[calc(100dvh-3.5rem)] max-h-[calc(100dvh-3.5rem)] min-h-0 bg-[#0b0f19] w-full max-w-full">
       {/* Sidebar: Active Conversations (Telegram / Signal style) */}
       <aside className={`${activeContact ? 'hidden md:flex' : 'flex'} w-full md:w-72 lg:w-80 bg-slate-900/40 border-r border-slate-800 flex-col shrink-0 h-full max-h-full min-h-0 overflow-hidden`}>
         {/* Sidebar Header & Start New Chat Button */}
@@ -2099,10 +2099,11 @@ export default function ChatPage() {
             )}
 
             {/* Message Feed */}
-            <div className="flex-1 p-3.5 sm:p-6 overflow-y-auto min-h-0 space-y-2.5 sm:space-y-3">
-              <div className="text-center my-2">
-                <span className="px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-[10px] text-slate-400 font-mono inline-flex items-center gap-1.5">
-                  <Lock className="w-3 h-3 text-emerald-400" /> Messages are end-to-end encrypted (AES-256-GCM). Zero server plaintext.
+            <div className="flex-1 p-3 sm:p-6 overflow-y-auto overflow-x-hidden min-h-0 space-y-2.5 sm:space-y-3 w-full max-w-full">
+              <div className="text-center my-2 px-2">
+                <span className="px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-[10px] text-slate-400 font-mono inline-flex items-center justify-center gap-1.5 max-w-full text-center flex-wrap leading-tight">
+                  <Lock className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span>Messages are end-to-end encrypted (AES-256-GCM). Zero server plaintext.</span>
                 </span>
               </div>
 
@@ -2125,9 +2126,9 @@ export default function ChatPage() {
                     )}
 
                     <div
-                      className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} mb-1.5 relative`}
+                      className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} mb-1.5 relative w-full max-w-full overflow-x-hidden`}
                     >
-                    <div className={`flex items-center gap-1.5 max-w-[85%] sm:max-w-[70%] ${isOwn ? 'flex-row' : 'flex-row-reverse'} relative`}>
+                    <div className={`flex items-center gap-1 sm:gap-1.5 max-w-[90%] sm:max-w-[75%] ${isOwn ? 'flex-row' : 'flex-row-reverse'} relative min-w-0`}>
                       {/* Floating Emoji Reaction Picker Bar */}
                       {activeReactionMsgId === msg.id && (
                         <>
@@ -2196,7 +2197,7 @@ export default function ChatPage() {
                       </div>
 
                       <div
-                        className={`flex-1 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-sm ${
+                        className={`flex-1 min-w-0 max-w-full px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-sm ${
                           isOwn
                             ? 'bg-emerald-600 text-white rounded-br-sm shadow-sm'
                             : 'bg-slate-900 border border-slate-800 text-slate-100 rounded-bl-sm shadow-sm'

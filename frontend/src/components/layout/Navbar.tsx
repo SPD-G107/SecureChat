@@ -109,7 +109,7 @@ export default function Navbar() {
   };
 
   return (
-    <header className="sticky top-0 z-50 h-14 px-4 sm:px-6 bg-[#0b0f19]/90 backdrop-blur-md border-b border-slate-800/80 flex items-center justify-between shrink-0">
+    <header className="sticky top-0 z-50 h-14 px-3 sm:px-6 bg-[#0b0f19]/90 backdrop-blur-md border-b border-slate-800/80 flex items-center justify-between shrink-0 w-full max-w-full overflow-x-hidden box-border">
       {/* Brand Logo */}
       <Link href="/" className="flex items-center gap-2.5 group">
         <div className="relative">
