@@ -215,9 +215,16 @@ export default function ChatPage() {
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:stun.cloudflare.com:3478' },
+      // Direct EC2 Coturn Relay for Symmetric NAT / 4G Traversal
+      {
+        urls: [
+          'turn:3.16.212.72:3478?transport=udp',
+          'turn:3.16.212.72:3478?transport=tcp',
+        ],
+        username: 'securechat',
+        credential: 'securechat_turn_2026',
+      },
     ],
   };
 
@@ -335,11 +342,6 @@ export default function ChatPage() {
     pc.oniceconnectionstatechange = () => {
       console.log('[WebRTC] ICE connection state:', pc.iceConnectionState);
       setIceConnectionState(pc.iceConnectionState);
-      if (pc.iceConnectionState === 'failed') {
-        try {
-          pc.restartIce();
-        } catch {}
-      }
     };
 
     pc.onconnectionstatechange = () => {
