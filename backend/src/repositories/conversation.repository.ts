@@ -86,6 +86,32 @@ export class ConversationRepository {
        LIMIT ?`,
       [conversationId, limit]
     );
+
+    if (rows && rows.length > 0) {
+      try {
+        const messageIds = rows.map((r) => r.id);
+        const placeholders = messageIds.map(() => '?').join(',');
+        const reactionRows = await query<any[]>(
+          `SELECT message_id, user_id, emoji FROM message_reactions WHERE message_id IN (${placeholders})`,
+          messageIds
+        );
+        const reactionsMap: Record<string, Record<string, string[]>> = {};
+        for (const rr of reactionRows || []) {
+          if (!reactionsMap[rr.message_id]) reactionsMap[rr.message_id] = {};
+          if (!reactionsMap[rr.message_id][rr.emoji]) reactionsMap[rr.message_id][rr.emoji] = [];
+          reactionsMap[rr.message_id][rr.emoji].push(rr.user_id);
+        }
+        for (const r of rows) {
+          r.reactions = reactionsMap[r.id] || {};
+        }
+      } catch (err: any) {
+        // Table may be migrating or empty
+        for (const r of rows) {
+          r.reactions = {};
+        }
+      }
+    }
+
     return rows;
   }
 
@@ -201,5 +227,52 @@ export class ConversationRepository {
   static async getConversationById(conversationId: string): Promise<Conversation | null> {
     const rows = await query<Conversation[]>('SELECT * FROM conversations WHERE id = ?', [conversationId]);
     return rows[0] || null;
+  }
+
+  static async toggleReaction(
+    messageId: string,
+    userId: string,
+    emoji: string
+  ): Promise<{ messageId: string; conversationId: string; action: 'added' | 'removed' | 'updated'; reactions: Record<string, string[]> }> {
+    const msgRows = await query<any[]>('SELECT id, conversation_id FROM messages WHERE id = ?', [messageId]);
+    if (!msgRows || msgRows.length === 0) {
+      throw new Error('Message not found');
+    }
+    const conversationId = msgRows[0].conversation_id;
+
+    const existing = await query<any[]>(
+      'SELECT id, emoji FROM message_reactions WHERE message_id = ? AND user_id = ?',
+      [messageId, userId]
+    );
+
+    let action: 'added' | 'removed' | 'updated' = 'added';
+
+    if (existing && existing.length > 0) {
+      if (existing[0].emoji === emoji) {
+        await query('DELETE FROM message_reactions WHERE message_id = ? AND user_id = ?', [messageId, userId]);
+        action = 'removed';
+      } else {
+        await query('UPDATE message_reactions SET emoji = ?, created_at = CURRENT_TIMESTAMP WHERE message_id = ? AND user_id = ?', [emoji, messageId, userId]);
+        action = 'updated';
+      }
+    } else {
+      await query(
+        'INSERT INTO message_reactions (id, message_id, user_id, emoji) VALUES (UUID(), ?, ?, ?)',
+        [messageId, userId, emoji]
+      );
+      action = 'added';
+    }
+
+    const currentReactions = await query<any[]>(
+      'SELECT user_id, emoji FROM message_reactions WHERE message_id = ?',
+      [messageId]
+    );
+    const reactions: Record<string, string[]> = {};
+    for (const row of currentReactions || []) {
+      if (!reactions[row.emoji]) reactions[row.emoji] = [];
+      reactions[row.emoji].push(row.user_id);
+    }
+
+    return { messageId, conversationId, action, reactions };
   }
 }

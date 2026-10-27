@@ -68,7 +68,21 @@ CREATE TABLE IF NOT EXISTS messages (
     INDEX idx_delivery_status (delivery_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 5. AuditLogs Table (Security & Admin Audit Trail - Zero Plaintext / Zero Secrets)
+-- 5. MessageReactions Table (Real-Time Emoji Reactions: Love, Angry, Sad, Happy, Like)
+CREATE TABLE IF NOT EXISTS message_reactions (
+    id VARCHAR(36) PRIMARY KEY,
+    message_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    emoji VARCHAR(16) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_user_message_reaction (message_id, user_id),
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_reaction_message (message_id),
+    INDEX idx_reaction_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 6. AuditLogs Table (Security & Admin Audit Trail - Zero Plaintext / Zero Secrets)
 CREATE TABLE IF NOT EXISTS audit_logs (
     id VARCHAR(36) PRIMARY KEY,
     user_id VARCHAR(36) NULL,

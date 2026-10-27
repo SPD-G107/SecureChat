@@ -130,4 +130,36 @@ router.delete('/conversation/:conversationId', async (req: AuthenticatedRequest,
   }
 });
 
+// Toggle message reaction (❤️, 😂, 😮, 😢, 😡, 👍)
+router.post('/:messageId/react', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { messageId } = req.params;
+    const { emoji } = req.body;
+    const userId = req.user!.userId;
+
+    if (!emoji || typeof emoji !== 'string') {
+      res.status(400).json({ error: 'Emoji is required' });
+      return;
+    }
+
+    const result = await ConversationRepository.toggleReaction(messageId, userId, emoji);
+
+    const io = req.app.get('io');
+    if (io && result.conversationId) {
+      io.emit('message:reacted', {
+        messageId,
+        userId,
+        emoji,
+        action: result.action,
+        conversationId: result.conversationId,
+        reactions: result.reactions,
+      });
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to react to message' });
+  }
+});
+
 export default router;

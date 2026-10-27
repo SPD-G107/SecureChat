@@ -191,6 +191,41 @@ export const setupChatSockets = (io: Server) => {
       });
     });
 
+    // Handle message reaction (like ❤️, 😂, 😮, 😢, 😡, 👍)
+    socket.on('message:react', async (data: {
+      messageId: string;
+      emoji: string;
+      recipientId?: string;
+      conversationId?: string;
+    }) => {
+      try {
+        const { messageId, emoji, recipientId, conversationId } = data;
+        const result = await ConversationRepository.toggleReaction(messageId, userId, emoji);
+
+        if (recipientId) {
+          io.to(`user:${recipientId}`).emit('message:reacted', {
+            messageId,
+            userId,
+            emoji,
+            action: result.action,
+            conversationId: result.conversationId || conversationId,
+            reactions: result.reactions,
+          });
+        }
+
+        socket.emit('message:reacted', {
+          messageId,
+          userId,
+          emoji,
+          action: result.action,
+          conversationId: result.conversationId || conversationId,
+          reactions: result.reactions,
+        });
+      } catch (err: any) {
+        logger.error('Failed to handle reaction via socket:', err.message);
+      }
+    });
+
     socket.on('disconnect', () => {
       const remaining = (onlineUsers.get(userId) || 1) - 1;
       if (remaining <= 0) {
