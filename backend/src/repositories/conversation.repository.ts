@@ -232,11 +232,12 @@ export class ConversationRepository {
   static async toggleReaction(
     messageId: string,
     userId: string,
-    emoji: string
-  ): Promise<{ messageId: string; conversationId: string; action: 'added' | 'removed' | 'updated'; reactions: Record<string, string[]> }> {
+    emoji: string,
+    forcedAction?: 'add' | 'remove' | 'toggle'
+  ): Promise<{ messageId: string; conversationId: string; action: 'added' | 'removed' | 'updated' | 'none'; reactions: Record<string, string[]> }> {
     const msgRows = await query<any[]>('SELECT id, conversation_id FROM messages WHERE id = ?', [messageId]);
     if (!msgRows || msgRows.length === 0) {
-      throw new Error('Message not found');
+      return { messageId, conversationId: '', action: 'none', reactions: {} };
     }
     const conversationId = msgRows[0].conversation_id;
 
@@ -245,22 +246,29 @@ export class ConversationRepository {
       [messageId, userId]
     );
 
-    let action: 'added' | 'removed' | 'updated' = 'added';
+    let action: 'added' | 'removed' | 'updated' | 'none' = 'added';
 
     if (existing && existing.length > 0) {
-      if (existing[0].emoji === emoji) {
+      if (forcedAction === 'remove' || (forcedAction !== 'add' && existing[0].emoji === emoji)) {
         await query('DELETE FROM message_reactions WHERE message_id = ? AND user_id = ?', [messageId, userId]);
         action = 'removed';
-      } else {
+      } else if (existing[0].emoji !== emoji) {
         await query('UPDATE message_reactions SET emoji = ?, created_at = CURRENT_TIMESTAMP WHERE message_id = ? AND user_id = ?', [emoji, messageId, userId]);
         action = 'updated';
+      } else {
+        // Already has this emoji and forcedAction is 'add' -> idempotent no-op
+        action = 'added';
       }
     } else {
-      await query(
-        'INSERT INTO message_reactions (id, message_id, user_id, emoji) VALUES (UUID(), ?, ?, ?)',
-        [messageId, userId, emoji]
-      );
-      action = 'added';
+      if (forcedAction !== 'remove') {
+        await query(
+          'INSERT INTO message_reactions (id, message_id, user_id, emoji) VALUES (UUID(), ?, ?, ?)',
+          [messageId, userId, emoji]
+        );
+        action = 'added';
+      } else {
+        action = 'none';
+      }
     }
 
     const currentReactions = await query<any[]>(

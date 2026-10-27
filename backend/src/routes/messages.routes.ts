@@ -134,7 +134,7 @@ router.delete('/conversation/:conversationId', async (req: AuthenticatedRequest,
 router.post('/:messageId/react', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { messageId } = req.params;
-    const { emoji } = req.body;
+    const { emoji, action } = req.body;
     const userId = req.user!.userId;
 
     if (!emoji || typeof emoji !== 'string') {
@@ -142,18 +142,34 @@ router.post('/:messageId/react', async (req: AuthenticatedRequest, res: Response
       return;
     }
 
-    const result = await ConversationRepository.toggleReaction(messageId, userId, emoji);
+    const result = await ConversationRepository.toggleReaction(messageId, userId, emoji, action);
+
+    if (result.action === 'none' && !result.conversationId) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
 
     const io = req.app.get('io');
-    if (io && result.conversationId) {
-      io.emit('message:reacted', {
+    if (io) {
+      const payload = {
         messageId,
         userId,
         emoji,
         action: result.action,
         conversationId: result.conversationId,
         reactions: result.reactions,
-      });
+      };
+
+      if (result.conversationId && !result.conversationId.startsWith('conv-')) {
+        const conv = await ConversationRepository.getConversationById(result.conversationId);
+        if (conv) {
+          io.to(`user:${conv.participant1_id || (conv as any).user1_id}`).to(`user:${conv.participant2_id || (conv as any).user2_id}`).emit('message:reacted', payload);
+        } else {
+          io.emit('message:reacted', payload);
+        }
+      } else {
+        io.emit('message:reacted', payload);
+      }
     }
 
     res.json({ success: true, ...result });

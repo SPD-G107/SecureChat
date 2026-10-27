@@ -195,32 +195,42 @@ export const setupChatSockets = (io: Server) => {
     socket.on('message:react', async (data: {
       messageId: string;
       emoji: string;
+      action?: 'add' | 'remove' | 'toggle';
       recipientId?: string;
       conversationId?: string;
     }) => {
       try {
-        const { messageId, emoji, recipientId, conversationId } = data;
-        const result = await ConversationRepository.toggleReaction(messageId, userId, emoji);
+        const { messageId, emoji, action, recipientId, conversationId } = data;
+        const result = await ConversationRepository.toggleReaction(messageId, userId, emoji, action);
 
-        if (recipientId) {
-          io.to(`user:${recipientId}`).emit('message:reacted', {
-            messageId,
-            userId,
-            emoji,
-            action: result.action,
-            conversationId: result.conversationId || conversationId,
-            reactions: result.reactions,
-          });
+        if (result.action === 'none' && !result.conversationId) {
+          return;
         }
 
-        socket.emit('message:reacted', {
+        const payload = {
           messageId,
           userId,
           emoji,
           action: result.action,
           conversationId: result.conversationId || conversationId,
           reactions: result.reactions,
-        });
+        };
+
+        // Broadcast to both conversation participants (all connected sockets for both users)
+        const targetConvId = result.conversationId || conversationId;
+        if (targetConvId && !targetConvId.startsWith('conv-')) {
+          const conv = await ConversationRepository.getConversationById(targetConvId);
+          if (conv) {
+            io.to(`user:${conv.participant1_id || (conv as any).user1_id}`).to(`user:${conv.participant2_id || (conv as any).user2_id}`).emit('message:reacted', payload);
+            return;
+          }
+        }
+
+        // Fallback: emit to recipient room and current user room
+        if (recipientId) {
+          io.to(`user:${recipientId}`).emit('message:reacted', payload);
+        }
+        io.to(`user:${userId}`).emit('message:reacted', payload);
       } catch (err: any) {
         logger.error('Failed to handle reaction via socket:', err.message);
       }
