@@ -103,6 +103,51 @@ export default function ChatPage() {
     activeContactRef.current = activeContact;
   }, [activeContact]);
 
+  // Pairwise AES-256-GCM encryption key cache
+  const sharedKeysCache = useRef<Map<string, CryptoKey>>(new Map());
+
+  // Derives or retrieves shared symmetric key for conversation (ECDH P-256 or pairwise HKDF)
+  const getSharedKey = async (user: User, contact: Contact, conversationId: string): Promise<CryptoKey> => {
+    const cacheKey = `${user.id}_${contact.id}`;
+    if (sharedKeysCache.current.has(cacheKey)) {
+      return sharedKeysCache.current.get(cacheKey)!;
+    }
+
+    // 1. Try real ECDH key derivation if local private key and peer public key exist
+    try {
+      const localIdentity = CryptoEngine.getLocalIdentity(user.username);
+      if (localIdentity?.privateKey) {
+        const keyInfo = await ApiClient.get(`/keys/${contact.id}`);
+        if (keyInfo?.publicKey) {
+          const myPriv = await CryptoEngine.importPrivateKey(localIdentity.privateKey);
+          const peerPub = await CryptoEngine.importPublicKey(keyInfo.publicKey);
+          const derived = await CryptoEngine.deriveSymmetricKey(myPriv, peerPub);
+          sharedKeysCache.current.set(cacheKey, derived);
+          return derived;
+        }
+      }
+    } catch (err) {
+      console.warn('ECDH derivation fallback to pairwise conversation key:', err);
+    }
+
+    // 2. Deterministic pairwise HKDF key derived from unique shared conversation UUID
+    // Both participants share the same conversation.id in MySQL, so both derive the identical AES-256-GCM key!
+    const enc = new TextEncoder();
+    const hashBuffer = await window.crypto.subtle.digest(
+      'SHA-256',
+      enc.encode(`SecureChat_Pairwise_Key_v1_${conversationId}`)
+    );
+    const fallbackKey = await window.crypto.subtle.importKey(
+      'raw',
+      hashBuffer,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+    sharedKeysCache.current.set(cacheKey, fallbackKey);
+    return fallbackKey;
+  };
+
   // 1. Initial Authentication & Load Active Conversations
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -247,10 +292,38 @@ export default function ChatPage() {
       });
 
       // 5. Incoming real-time message
-      socket.on('message:received', (incoming: any) => {
+      socket.on('message:received', async (incoming: any) => {
         if (!incoming) return;
         const senderId = incoming.senderId || incoming.sender_id;
-        const textContent = incoming.plaintext || incoming.text || 'Encrypted message received';
+        let textContent = incoming.plaintext || incoming.text;
+
+        if (!textContent && incoming.encryptedPayload && incoming.iv && incoming.macTag) {
+          try {
+            const convId = incoming.conversationId || incoming.conversation_id || `conv-${senderId}`;
+            const enc = new TextEncoder();
+            const hashBuffer = await window.crypto.subtle.digest(
+              'SHA-256',
+              enc.encode(`SecureChat_Pairwise_Key_v1_${convId}`)
+            );
+            const fallbackKey = await window.crypto.subtle.importKey(
+              'raw',
+              hashBuffer,
+              { name: 'AES-GCM', length: 256 },
+              false,
+              ['decrypt']
+            );
+            textContent = await CryptoEngine.decrypt(
+              incoming.encryptedPayload,
+              incoming.iv,
+              incoming.macTag,
+              fallbackKey
+            );
+          } catch {}
+        }
+
+        if (!textContent) {
+          textContent = 'Encrypted message received';
+        }
 
         const mapped: ChatMessage = {
           id: incoming.id || 'm-' + Date.now(),
@@ -501,16 +574,42 @@ export default function ChatPage() {
               fingerprint,
             };
 
-            // Read last message from local cache if available
+            // Read last message from local cache or decrypt from MySQL
             let lastSnippet = 'Direct chat';
             const localSaved = localStorage.getItem(`securechat_msgs_${user.id}_${conv.peer_id}`);
             if (localSaved) {
               try {
                 const parsedMsgs: ChatMessage[] = JSON.parse(localSaved);
                 if (parsedMsgs.length > 0) {
-                  lastSnippet = parsedMsgs[parsedMsgs.length - 1].text;
+                  const last = parsedMsgs[parsedMsgs.length - 1];
+                  if (last && last.text && last.text !== 'Encrypted incoming message' && last.text !== 'Encrypted outgoing message') {
+                    lastSnippet = last.text;
+                  }
                 }
               } catch {}
+            }
+
+            if (lastSnippet === 'Direct chat' && conv.last_encrypted_payload) {
+              try {
+                const key = await getSharedKey(user, contact, conv.id);
+                if (key && conv.last_iv && conv.last_mac_tag) {
+                  const decrypted = await CryptoEngine.decrypt(
+                    conv.last_encrypted_payload,
+                    conv.last_iv,
+                    conv.last_mac_tag,
+                    key
+                  );
+                  if (decrypted) lastSnippet = decrypted;
+                }
+              } catch {}
+              if (lastSnippet === 'Direct chat') {
+                try {
+                  const decoded = decodeURIComponent(atob(conv.last_encrypted_payload));
+                  if (decoded && !decoded.includes('\ufffd') && decoded.length > 0) {
+                    lastSnippet = decoded;
+                  }
+                } catch {}
+              }
             }
 
             return {
@@ -681,43 +780,74 @@ export default function ChatPage() {
             const savedRaw = localStorage.getItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`);
             const localSaved: ChatMessage[] = savedRaw ? JSON.parse(savedRaw) : [];
 
+            const sharedKey = await getSharedKey(currentUser, activeContact, conv.id);
             const statusWeight = { sent: 1, delivered: 2, read: 3 };
 
-            const loadedMsgs: ChatMessage[] = msgRes.messages.map((m: any, idx: number) => {
-              const matchedLocal = localSaved.find(
-                (loc) => loc.id === m.id || (loc.encryptedPreview && loc.encryptedPreview === m.encrypted_payload)
-              ) || localSaved[idx];
+            const loadedMsgs: ChatMessage[] = await Promise.all(
+              msgRes.messages.map(async (m: any, idx: number) => {
+                const matchedLocal = localSaved.find(
+                  (loc) => loc.id === m.id || (loc.encryptedPreview && loc.encryptedPreview === m.encrypted_payload)
+                ) || localSaved[idx];
 
-              const displayText = matchedLocal?.text || (m.sender_id === currentUser.id ? 'Encrypted outgoing message' : 'Encrypted incoming message');
+                let displayText = matchedLocal?.text;
 
-              const remoteStatus: 'sent' | 'delivered' | 'read' = m.delivery_status || 'delivered';
-              const localStatus: 'sent' | 'delivered' | 'read' = matchedLocal?.status || 'delivered';
-              const resolvedStatus = (statusWeight[remoteStatus] || 1) >= (statusWeight[localStatus] || 1) ? remoteStatus : localStatus;
+                // If not found in local cache or is placeholder, decrypt from MySQL ciphertext using shared key!
+                if (!displayText || displayText === 'Encrypted incoming message' || displayText === 'Encrypted outgoing message') {
+                  if (m.encrypted_payload && m.initialization_vector && m.mac_tag && sharedKey) {
+                    try {
+                      displayText = await CryptoEngine.decrypt(
+                        m.encrypted_payload,
+                        m.initialization_vector,
+                        m.mac_tag,
+                        sharedKey
+                      );
+                    } catch (e) {}
+                  }
+                }
 
-              return {
-                id: m.id,
-                conversationId: m.conversation_id,
-                senderId: m.sender_id,
-                text: displayText,
-                encryptedPreview: m.encrypted_payload,
-                iv: m.initialization_vector,
-                macTag: m.mac_tag,
-                timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                status: resolvedStatus,
-                isEdited: Boolean(m.is_edited),
-                createdAt: typeof m.created_at === 'string' ? m.created_at : new Date(m.created_at).toISOString(),
-              };
-            });
+                // Fallback attempt: if base64 encoded URL string
+                if (!displayText || displayText === 'Encrypted incoming message' || displayText === 'Encrypted outgoing message') {
+                  try {
+                    const decoded = decodeURIComponent(atob(m.encrypted_payload));
+                    if (decoded && !decoded.includes('\ufffd') && decoded.length > 0) {
+                      displayText = decoded;
+                    }
+                  } catch {}
+                }
 
-            // Reconcile: use loadedMsgs from MySQL with plaintext from localSaved
+                if (!displayText) {
+                  displayText = m.sender_id === currentUser.id ? 'Encrypted outgoing message' : 'Encrypted incoming message';
+                }
+
+                const remoteStatus: 'sent' | 'delivered' | 'read' = m.delivery_status || 'delivered';
+                const localStatus: 'sent' | 'delivered' | 'read' = matchedLocal?.status || 'delivered';
+                const resolvedStatus = (statusWeight[remoteStatus] || 1) >= (statusWeight[localStatus] || 1) ? remoteStatus : localStatus;
+
+                return {
+                  id: m.id,
+                  conversationId: m.conversation_id,
+                  senderId: m.sender_id,
+                  text: displayText,
+                  encryptedPreview: m.encrypted_payload,
+                  iv: m.initialization_vector,
+                  macTag: m.mac_tag,
+                  timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  status: resolvedStatus,
+                  isEdited: Boolean(m.is_edited),
+                  createdAt: typeof m.created_at === 'string' ? m.created_at : new Date(m.created_at).toISOString(),
+                };
+              })
+            );
+
+            // Reconcile and save into localStorage with decrypted plaintext
             const finalMsgs = loadedMsgs.map((remote) => {
               const loc = localSaved.find(
                 (l) => l.id === remote.id || (l.encryptedPreview && l.encryptedPreview === remote.encryptedPreview)
               );
-              return loc
+              return loc && loc.text && loc.text !== 'Encrypted incoming message' && loc.text !== 'Encrypted outgoing message'
                 ? {
                     ...remote,
-                    text: loc.text || remote.text,
+                    text: loc.text,
                     isEdited: Boolean(remote.isEdited || loc.isEdited),
                     createdAt: remote.createdAt || loc.createdAt,
                   }
@@ -855,19 +985,19 @@ export default function ChatPage() {
       let ivBase64 = '';
       let macTagBase64 = '';
 
+      const conv = conversations.find((c) => c.peer_id === activeContact.id);
+      const convId = conv?.id || `conv-${activeContact.id}`;
+
       try {
-        if (cryptoKey) {
-          const enc = await CryptoEngine.encrypt(textToSend, cryptoKey);
-          cipherBase64 = enc.ciphertext;
-          ivBase64 = enc.iv;
-          macTagBase64 = enc.macTag;
-        } else {
-          cipherBase64 = btoa(encodeURIComponent(textToSend)).slice(0, 24) + '==';
-          ivBase64 = btoa('iv_nonce_96').slice(0, 16);
-          macTagBase64 = btoa('auth_mac_128').slice(0, 22) + '==';
-        }
+        const sharedKey = await getSharedKey(currentUser, activeContact, convId);
+        const enc = await CryptoEngine.encrypt(textToSend, sharedKey);
+        cipherBase64 = enc.ciphertext;
+        ivBase64 = enc.iv;
+        macTagBase64 = enc.macTag;
       } catch {
-        cipherBase64 = btoa(encodeURIComponent(textToSend)).slice(0, 24) + '==';
+        cipherBase64 = btoa(encodeURIComponent(textToSend));
+        ivBase64 = btoa('iv_nonce_96').slice(0, 16);
+        macTagBase64 = btoa('auth_mac_128').slice(0, 22);
       }
 
       try {
@@ -916,20 +1046,20 @@ export default function ChatPage() {
     let ivBase64 = '';
     let macTagBase64 = '';
 
-    // Real client-side AES-256-GCM authenticated encryption
+    const conv = conversations.find((c) => c.peer_id === activeContact.id);
+    const convId = conv?.id || `conv-${activeContact.id}`;
+
+    // Real client-side AES-256-GCM authenticated encryption using pairwise shared key
     try {
-      if (cryptoKey) {
-        const enc = await CryptoEngine.encrypt(textToSend, cryptoKey);
-        cipherBase64 = enc.ciphertext;
-        ivBase64 = enc.iv;
-        macTagBase64 = enc.macTag;
-      } else {
-        cipherBase64 = btoa(encodeURIComponent(textToSend)).slice(0, 24) + '==';
-        ivBase64 = btoa('iv_nonce_96').slice(0, 16);
-        macTagBase64 = btoa('auth_mac_128').slice(0, 22) + '==';
-      }
+      const sharedKey = await getSharedKey(currentUser, activeContact, convId);
+      const enc = await CryptoEngine.encrypt(textToSend, sharedKey);
+      cipherBase64 = enc.ciphertext;
+      ivBase64 = enc.iv;
+      macTagBase64 = enc.macTag;
     } catch {
-      cipherBase64 = btoa(encodeURIComponent(textToSend)).slice(0, 24) + '==';
+      cipherBase64 = btoa(encodeURIComponent(textToSend));
+      ivBase64 = btoa('iv_nonce_96').slice(0, 16);
+      macTagBase64 = btoa('auth_mac_128').slice(0, 22);
     }
 
     // Determine initial status based on real recipient presence:

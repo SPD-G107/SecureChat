@@ -33,6 +33,8 @@ export class ConversationRepository {
       `SELECT c.id, c.created_at, c.updated_at,
               u.id as peer_id, u.username as peer_username, u.display_name as peer_display_name, u.avatar_url as peer_avatar_url,
               (SELECT m.encrypted_payload FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_encrypted_payload,
+              (SELECT m.initialization_vector FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_iv,
+              (SELECT m.mac_tag FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_mac_tag,
               (SELECT m.created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_message_at
        FROM conversations c
        JOIN users u ON (u.id = CASE WHEN c.participant1_id = ? THEN c.participant2_id ELSE c.participant1_id END)
