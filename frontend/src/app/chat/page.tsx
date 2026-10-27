@@ -139,6 +139,7 @@ export default function ChatPage() {
   const activeCallPeerRef = useRef<Contact | null>(null);
   const isCallVideoRef = useRef<boolean>(false);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const remoteMediaStreamRef = useRef<MediaStream | null>(null);
 
   // Real Socket.IO Presence Tracking
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -210,7 +211,12 @@ export default function ChatPage() {
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:stun.services.mozilla.com' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
     ],
+    iceCandidatePoolSize: 10,
   };
 
   const cleanupCall = () => {
@@ -220,9 +226,12 @@ export default function ChatPage() {
       localStreamRef.current = null;
     }
     if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
+      try {
+        peerConnectionRef.current.close();
+      } catch {}
       peerConnectionRef.current = null;
     }
+    remoteMediaStreamRef.current = null;
     pendingCandidatesRef.current = [];
     activeCallPeerRef.current = null;
     setLocalStream(null);
@@ -235,18 +244,31 @@ export default function ChatPage() {
 
   const getMediaStream = async (video: boolean, facing: 'user' | 'environment' = 'user'): Promise<MediaStream> => {
     return await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: video ? { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: video
+        ? {
+            facingMode: facing,
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+          }
+        : false,
     });
   };
 
   const createPeerConnection = (targetUserId: string): RTCPeerConnection => {
     if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
+      try {
+        peerConnectionRef.current.close();
+      } catch {}
     }
 
     const pc = new RTCPeerConnection(RTC_CONFIG);
     peerConnectionRef.current = pc;
+    remoteMediaStreamRef.current = new MediaStream();
 
     // Relay local ICE candidates to peer
     pc.onicecandidate = (event) => {
@@ -260,11 +282,31 @@ export default function ChatPage() {
       }
     };
 
-    // Receive remote media stream
+    // Receive remote media tracks and construct fresh stream
     pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
+      console.log('[WebRTC] Received remote track:', event.track.kind, event.track.id);
+      if (!remoteMediaStreamRef.current) {
+        remoteMediaStreamRef.current = new MediaStream();
       }
+      const stream = remoteMediaStreamRef.current;
+
+      // Remove stale track of the same kind if already present
+      const existing = stream.getTracks().find((t) => t.kind === event.track.kind);
+      if (existing) {
+        stream.removeTrack(existing);
+      }
+      stream.addTrack(event.track);
+
+      // Create brand new MediaStream instance so React state triggers re-render
+      setRemoteStream(new MediaStream(stream.getTracks()));
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('[WebRTC] ICE connection state:', pc.iceConnectionState);
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('[WebRTC] Connection state:', pc.connectionState);
     };
 
     // Attach local stream tracks to PeerConnection
@@ -280,6 +322,7 @@ export default function ChatPage() {
   const startCall = async (video: boolean) => {
     if (!activeContact || !currentUser) return;
     try {
+      cleanupCall();
       const stream = await getMediaStream(video, 'user');
       localStreamRef.current = stream;
       setLocalStream(stream);
@@ -314,12 +357,6 @@ export default function ChatPage() {
 
       const pc = createPeerConnection(peer.id);
       setCallState('connected');
-
-      // Process any buffered early candidates
-      while (pendingCandidatesRef.current.length > 0) {
-        const cand = pendingCandidatesRef.current.shift();
-        if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand));
-      }
 
       const socket = getSocket();
       socket?.emit('call:accept', { callerId: peer.id });
@@ -871,7 +908,10 @@ export default function ChatPage() {
         const pc = createPeerConnection(data.recipientId);
 
         try {
-          const offer = await pc.createOffer();
+          const offer = await pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: isCallVideoRef.current,
+          });
           await pc.setLocalDescription(offer);
           socket.emit('call:signal', {
             targetUserId: data.recipientId,
@@ -901,30 +941,69 @@ export default function ChatPage() {
       });
 
       socket.on('call:signal', async (data: { senderId: string; signalData: any; type: 'offer' | 'answer' | 'candidate' }) => {
-        const pc = peerConnectionRef.current;
-        if (!pc) return;
-
         try {
           if (data.type === 'offer') {
+            let pc = peerConnectionRef.current;
+            if (!pc && activeCallPeerRef.current) {
+              pc = createPeerConnection(activeCallPeerRef.current.id);
+            }
+            if (!pc) return;
+
             await pc.setRemoteDescription(new RTCSessionDescription(data.signalData));
+
+            // Drain buffered early candidates
+            while (pendingCandidatesRef.current.length > 0) {
+              const cand = pendingCandidatesRef.current.shift();
+              if (cand) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (e) {
+                  console.warn('[WebRTC] Buffered candidate error on offer:', e);
+                }
+              }
+            }
+
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
+
             socket.emit('call:signal', {
               targetUserId: data.senderId,
               signalData: answer,
               type: 'answer',
             });
           } else if (data.type === 'answer') {
+            const pc = peerConnectionRef.current;
+            if (!pc) return;
+
             await pc.setRemoteDescription(new RTCSessionDescription(data.signalData));
+
+            // Drain buffered candidates
+            while (pendingCandidatesRef.current.length > 0) {
+              const cand = pendingCandidatesRef.current.shift();
+              if (cand) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (e) {
+                  console.warn('[WebRTC] Buffered candidate error on answer:', e);
+                }
+              }
+            }
           } else if (data.type === 'candidate') {
-            if (pc.remoteDescription) {
-              await pc.addIceCandidate(new RTCIceCandidate(data.signalData));
-            } else {
-              pendingCandidatesRef.current.push(data.signalData);
+            if (data.signalData) {
+              const pc = peerConnectionRef.current;
+              if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(data.signalData));
+                } catch (e) {
+                  console.warn('[WebRTC] Live candidate add error:', e);
+                }
+              } else {
+                pendingCandidatesRef.current.push(data.signalData);
+              }
             }
           }
         } catch (err: any) {
-          console.error('WebRTC signal processing error:', err);
+          console.error('[WebRTC] Signal handling error:', err);
         }
       });
     }
