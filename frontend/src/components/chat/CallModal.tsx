@@ -12,6 +12,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Maximize2,
+  Volume2,
 } from 'lucide-react';
 import { Contact } from '@/types';
 
@@ -53,11 +54,13 @@ export default function CallModal({
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [duration, setDuration] = useState(0);
   const [isSwapped, setIsSwapped] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   // Reset swap view when call ends
   useEffect(() => {
     if (callState === 'idle') {
       setIsSwapped(false);
+      setAudioBlocked(false);
     }
   }, [callState]);
 
@@ -65,9 +68,15 @@ export default function CallModal({
   useEffect(() => {
     if (remoteStream && remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = remoteStream;
-      remoteAudioRef.current.play().catch((err) => {
-        console.warn('[CallModal] Remote audio play error:', err);
-      });
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.volume = 1.0;
+      remoteAudioRef.current
+        .play()
+        .then(() => setAudioBlocked(false))
+        .catch((err) => {
+          console.warn('[CallModal] Remote audio play error:', err);
+          setAudioBlocked(true);
+        });
     }
   }, [remoteStream, callState]);
 
@@ -241,6 +250,22 @@ export default function CallModal({
 
         {/* Video or Audio Stage */}
         <div className="flex-1 relative bg-slate-950 flex items-center justify-center overflow-hidden min-h-0">
+          {/* Floating Tap-to-Unmute Banner if mobile browser blocked audio autoplay */}
+          {audioBlocked && (
+            <button
+              type="button"
+              onClick={() => {
+                if (remoteAudioRef.current) {
+                  remoteAudioRef.current.play().then(() => setAudioBlocked(false)).catch(() => {});
+                }
+              }}
+              className="absolute top-4 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-semibold shadow-2xl flex items-center gap-2 animate-bounce cursor-pointer border border-emerald-400 backdrop-blur-md"
+            >
+              <Volume2 className="w-4 h-4" />
+              <span>Tap to enable audio / ចុចបើកសំឡេង</span>
+            </button>
+          )}
+
           {isVideo ? (
             <>
               {/* Primary Video Window (Muted so browser never blocks autoplay) */}

@@ -208,13 +208,29 @@ export default function ChatPage() {
 
   const RTC_CONFIG: RTCConfiguration = {
     iceServers: [
+      // STUN servers
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:stun.services.mozilla.com' },
       { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:openrelay.metered.ca:80' },
+      // Free Public TURN Relays (Open Relay Project by Metered)
+      // Bypasses Symmetric NAT, Carrier-Grade NAT (CGNAT on 4G/5G mobile carriers), and strict firewalls
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
     ],
     iceCandidatePoolSize: 10,
   };
@@ -243,20 +259,28 @@ export default function ChatPage() {
   };
 
   const getMediaStream = async (video: boolean, facing: 'user' | 'environment' = 'user'): Promise<MediaStream> => {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: video
-        ? {
-            facingMode: facing,
-            width: { ideal: 1280, max: 1920 },
-            height: { ideal: 720, max: 1080 },
-          }
-        : false,
-    });
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: video
+          ? {
+              facingMode: facing,
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+            }
+          : false,
+      });
+    } catch (e) {
+      console.warn('[WebRTC] Fallback to standard media constraints:', e);
+      return await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: video ? true : false,
+      });
+    }
   };
 
   const createPeerConnection = (targetUserId: string): RTCPeerConnection => {
@@ -270,35 +294,48 @@ export default function ChatPage() {
     peerConnectionRef.current = pc;
     remoteMediaStreamRef.current = new MediaStream();
 
-    // Relay local ICE candidates to peer
+    // Relay local ICE candidates to peer with explicit JSON serialization
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         const socket = getSocket();
-        socket?.emit('call:signal', {
-          targetUserId,
-          signalData: event.candidate,
-          type: 'candidate',
-        });
+        const candObj = typeof event.candidate.toJSON === 'function'
+          ? event.candidate.toJSON()
+          : {
+              candidate: event.candidate.candidate,
+              sdpMid: event.candidate.sdpMid,
+              sdpMLineIndex: event.candidate.sdpMLineIndex,
+              usernameFragment: event.candidate.usernameFragment,
+            };
+
+        if (candObj && candObj.candidate) {
+          socket?.emit('call:signal', {
+            targetUserId,
+            signalData: candObj,
+            type: 'candidate',
+          });
+        }
       }
     };
 
     // Receive remote media tracks and construct fresh stream
     pc.ontrack = (event) => {
       console.log('[WebRTC] Received remote track:', event.track.kind, event.track.id);
-      if (!remoteMediaStreamRef.current) {
-        remoteMediaStreamRef.current = new MediaStream();
+      const stream = (event.streams && event.streams[0]) ? event.streams[0] : null;
+      if (stream) {
+        remoteMediaStreamRef.current = stream;
+        setRemoteStream(new MediaStream(stream.getTracks()));
+      } else {
+        if (!remoteMediaStreamRef.current) {
+          remoteMediaStreamRef.current = new MediaStream();
+        }
+        const cur = remoteMediaStreamRef.current;
+        const existing = cur.getTracks().find((t) => t.kind === event.track.kind);
+        if (existing) {
+          cur.removeTrack(existing);
+        }
+        cur.addTrack(event.track);
+        setRemoteStream(new MediaStream(cur.getTracks()));
       }
-      const stream = remoteMediaStreamRef.current;
-
-      // Remove stale track of the same kind if already present
-      const existing = stream.getTracks().find((t) => t.kind === event.track.kind);
-      if (existing) {
-        stream.removeTrack(existing);
-      }
-      stream.addTrack(event.track);
-
-      // Create brand new MediaStream instance so React state triggers re-render
-      setRemoteStream(new MediaStream(stream.getTracks()));
     };
 
     pc.oniceconnectionstatechange = () => {
@@ -915,7 +952,10 @@ export default function ChatPage() {
           await pc.setLocalDescription(offer);
           socket.emit('call:signal', {
             targetUserId: data.recipientId,
-            signalData: offer,
+            signalData: {
+              type: offer.type,
+              sdp: offer.sdp,
+            },
             type: 'offer',
           });
         } catch (err: any) {
@@ -954,7 +994,7 @@ export default function ChatPage() {
             // Drain buffered early candidates
             while (pendingCandidatesRef.current.length > 0) {
               const cand = pendingCandidatesRef.current.shift();
-              if (cand) {
+              if (cand && cand.candidate) {
                 try {
                   await pc.addIceCandidate(new RTCIceCandidate(cand));
                 } catch (e) {
@@ -968,7 +1008,10 @@ export default function ChatPage() {
 
             socket.emit('call:signal', {
               targetUserId: data.senderId,
-              signalData: answer,
+              signalData: {
+                type: answer.type,
+                sdp: answer.sdp,
+              },
               type: 'answer',
             });
           } else if (data.type === 'answer') {
@@ -980,7 +1023,7 @@ export default function ChatPage() {
             // Drain buffered candidates
             while (pendingCandidatesRef.current.length > 0) {
               const cand = pendingCandidatesRef.current.shift();
-              if (cand) {
+              if (cand && cand.candidate) {
                 try {
                   await pc.addIceCandidate(new RTCIceCandidate(cand));
                 } catch (e) {
@@ -989,7 +1032,7 @@ export default function ChatPage() {
               }
             }
           } else if (data.type === 'candidate') {
-            if (data.signalData) {
+            if (data.signalData && data.signalData.candidate) {
               const pc = peerConnectionRef.current;
               if (pc && pc.remoteDescription && pc.remoteDescription.type) {
                 try {
