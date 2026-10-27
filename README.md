@@ -688,6 +688,11 @@ docker compose up --build
 4. **Symmetric NAT & 4G/5G Traversal with Self-Hosted Coturn Relay**:
    - Primary connectivity leverages ultra-fast Google and Cloudflare STUN nodes for direct zero-latency P2P DTLS-SRTP streams on local Wi-Fi and cone NAT networks.
    - For restricted mobile networks (4G/5G Carrier-Grade Symmetric NAT) where direct UDP traversal is dropped, a dedicated self-hosted Coturn TURN relay is deployed via `docker-compose.yml` (`turn:3.16.212.72:3478`), supporting both UDP and TCP relay transports with zero third-party cloud API dependencies.
+5. **Background Lock-Screen Call Wakeup via W3C Web Push**:
+   - Integrated RFC 8291 / RFC 8292 standard Web Push protocol with VAPID key authentication and MySQL subscription tracking.
+   - When a recipient's phone screen is locked or browser tab is closed, incoming calls and messages trigger high-priority Web Push payloads directly to the PWA Service Worker (`sw.js`).
+   - The device wakes up, executes a persistent incoming call vibration cadence, displays a rich lock-screen notification (`📹 Incoming Video Call from @user`), and provides interactive `🟢 Accept` and `🔴 Decline` action buttons that launch directly into the active WebRTC session.
+
 
 
 

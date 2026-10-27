@@ -12,4 +12,7 @@ export const ENV = {
   JWT_SECRET: process.env.JWT_SECRET || 'dev_insecure_jwt_secret_change_me',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '24h',
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || 'BKUyk0P1y9rKQfLw5FUfnoO-4mHZaYKzEuAvyZh3gz1LMPm7Pdgl0xNYYhyqNfZilfaFHmW_OiOGpm2cvvCTiFw',
+  VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY || 'aJ9kiTaESbv3V5msZsEjNm1qOJbXWZop_1ik-OE3_cQ',
+  VAPID_SUBJECT: process.env.VAPID_SUBJECT || 'mailto:admin@securechat.io',
 };
