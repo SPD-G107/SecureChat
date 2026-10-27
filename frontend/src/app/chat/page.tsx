@@ -84,6 +84,8 @@ function formatChatDateDivider(dateStr?: string): string {
   });
 }
 
+const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '😡'];
+
 export default function ChatPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -101,7 +103,6 @@ export default function ChatPage() {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [isChatMenuOpen, setIsChatMenuOpen] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
-  const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '😡'];
 
   // Media attachments & Voice Recording State
   const [selectedImagePreview, setSelectedImagePreview] = useState<{ data: string; name: string } | null>(null);
@@ -523,11 +524,11 @@ export default function ChatPage() {
         messageId: string;
         userId: string;
         emoji: string;
-        action: 'added' | 'removed' | 'updated';
+        action: 'added' | 'removed' | 'updated' | 'none';
         conversationId?: string;
         reactions?: Record<string, string[]>;
       }) => {
-        if (!data || !data.messageId) return;
+        if (!data || !data.messageId || data.action === 'none') return;
         setMessagesMap((prev) => {
           const updated = { ...prev };
           let changed = false;
@@ -537,11 +538,11 @@ export default function ChatPage() {
               changed = true;
               const newMsgs = prevMsgs.map((m) => {
                 if (m.id === data.messageId) {
-                  let nextReactions: Record<string, string[]> = data.reactions
+                  let nextReactions: Record<string, string[]> = data.reactions !== undefined
                     ? { ...data.reactions }
                     : { ...(m.reactions || {}) };
 
-                  if (!data.reactions) {
+                  if (data.reactions === undefined) {
                     for (const e in nextReactions) {
                       nextReactions[e] = nextReactions[e].filter((u) => u !== data.userId);
                       if (nextReactions[e].length === 0) delete nextReactions[e];
@@ -938,7 +939,7 @@ export default function ChatPage() {
                     ...remote,
                     text: loc.text,
                     isEdited: Boolean(remote.isEdited || loc.isEdited),
-                    reactions: remote.reactions && Object.keys(remote.reactions).length > 0 ? remote.reactions : loc.reactions || {},
+                    reactions: remote.reactions !== undefined ? remote.reactions : (loc?.reactions || {}),
                     createdAt: remote.createdAt || loc.createdAt,
                   }
                 : remote;
@@ -1012,24 +1013,34 @@ export default function ChatPage() {
   const handleToggleReaction = async (messageId: string, emoji: string) => {
     if (!currentUser || !activeContact) return;
 
-    // 1. Optimistic UI update
-    setMessagesMap((prev) => {
-      const currentList = prev[activeContact.id] || [];
-      const updated = currentList.map((m) => {
-        if (m.id === messageId) {
-          const nextReactions: Record<string, string[]> = { ...(m.reactions || {}) };
-          const userAlreadyReacted = nextReactions[emoji]?.includes(currentUser.id);
+    // Check existing reaction to calculate intended action ('add' | 'remove')
+    const currentList = messagesMap[activeContact.id] || [];
+    const targetMsg = currentList.find((m) => m.id === messageId);
+    const userAlreadyReacted = Boolean(targetMsg?.reactions?.[emoji]?.includes(currentUser.id));
+    const targetAction: 'add' | 'remove' = userAlreadyReacted ? 'remove' : 'add';
 
-          // Remove user's previous reaction from any emoji on this message
+    // 1. Instant optimistic UI update (zero latency)
+    setMessagesMap((prev) => {
+      const list = prev[activeContact.id] || [];
+      const updated = list.map((m) => {
+        if (m.id === messageId) {
+          const nextReactions: Record<string, string[]> = {};
+          for (const [k, v] of Object.entries(m.reactions || {})) {
+            nextReactions[k] = [...v];
+          }
+
+          // Remove user's previous reaction from any emoji on this message (one reaction per user)
           for (const e in nextReactions) {
             nextReactions[e] = nextReactions[e].filter((u) => u !== currentUser.id);
             if (nextReactions[e].length === 0) delete nextReactions[e];
           }
 
-          // If they had not reacted with this emoji, add it
-          if (!userAlreadyReacted) {
+          // If adding, place into selected emoji
+          if (targetAction === 'add') {
             if (!nextReactions[emoji]) nextReactions[emoji] = [];
-            nextReactions[emoji].push(currentUser.id);
+            if (!nextReactions[emoji].includes(currentUser.id)) {
+              nextReactions[emoji].push(currentUser.id);
+            }
           }
 
           return { ...m, reactions: nextReactions };
@@ -1043,22 +1054,30 @@ export default function ChatPage() {
       return { ...prev, [activeContact.id]: updated };
     });
 
-    // 2. Emit via Socket.IO for instant delivery to recipient
+    const conv = conversations.find((c) => c.peer_id === activeContact.id);
+    const convId = conv?.id || `conv-${activeContact.id}`;
+
+    // 2. Dispatch reaction:
+    // If socket is connected, emit through Socket.IO for real-time delivery and persistence
     const socket = getSocket();
     if (socket && socket.connected) {
       socket.emit('message:react', {
         messageId,
         emoji,
+        action: targetAction,
         recipientId: activeContact.id,
-        conversationId: `conv-${activeContact.id}`,
+        conversationId: convId,
       });
-    }
-
-    // 3. Persist in MySQL via REST API
-    try {
-      await ApiClient.post(`/messages/${messageId}/react`, { emoji });
-    } catch (err: any) {
-      console.warn('Failed to persist reaction in MySQL:', err.message);
+    } else {
+      // Fallback to REST API ONLY when socket is disconnected
+      try {
+        await ApiClient.post(`/messages/${messageId}/react`, {
+          emoji,
+          action: targetAction,
+        });
+      } catch (err: any) {
+        console.warn('Failed to persist reaction via REST:', err.message);
+      }
     }
   };
 
@@ -2126,7 +2145,7 @@ export default function ChatPage() {
                     )}
 
                     <div
-                      className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} mb-1.5 relative w-full max-w-full overflow-x-hidden`}
+                      className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} mb-1.5 relative w-full max-w-full`}
                     >
                     <div className={`flex items-center gap-1 sm:gap-1.5 max-w-[90%] sm:max-w-[75%] ${isOwn ? 'flex-row' : 'flex-row-reverse'} relative min-w-0`}>
                       {/* Floating Emoji Reaction Picker Bar */}
@@ -2137,9 +2156,9 @@ export default function ChatPage() {
                             onClick={() => setActiveReactionMsgId(null)}
                           />
                           <div
-                            className={`absolute z-40 -top-11 ${
+                            className={`absolute z-40 bottom-full mb-1.5 ${
                               isOwn ? 'right-0' : 'left-0'
-                            } flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl animate-in zoom-in-95 duration-150`}
+                            } flex items-center gap-1 sm:gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl animate-in fade-in zoom-in-95 duration-150`}
                           >
                             {REACTION_EMOJIS.map((emoji) => {
                               const isMyReaction = currentUser && msg.reactions?.[emoji]?.includes(currentUser.id);
@@ -2151,8 +2170,8 @@ export default function ChatPage() {
                                     handleToggleReaction(msg.id, emoji);
                                     setActiveReactionMsgId(null);
                                   }}
-                                  className={`text-base sm:text-lg hover:scale-130 active:scale-95 transition-transform p-1 rounded-full ${
-                                    isMyReaction ? 'bg-emerald-500/20 ring-1 ring-emerald-400 scale-110' : 'hover:bg-slate-800/80'
+                                  className={`text-lg sm:text-xl p-1.5 rounded-full hover:scale-130 active:scale-90 transition-transform cursor-pointer select-none ${
+                                    isMyReaction ? 'bg-emerald-500/25 ring-1 ring-emerald-400 scale-110' : 'hover:bg-slate-800/80'
                                   }`}
                                   title={`React with ${emoji}`}
                                 >
@@ -2165,21 +2184,21 @@ export default function ChatPage() {
                       )}
 
                       {/* Message Actions (Emoji Reaction trigger + Edit/Delete) */}
-                      <div className="opacity-70 sm:opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0">
+                      <div className="opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0">
                         <button
                           type="button"
                           onClick={() => setActiveReactionMsgId(activeReactionMsgId === msg.id ? null : msg.id)}
-                          className="p-1 rounded-md text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors"
+                          className="p-1.5 rounded-full text-slate-400 hover:text-emerald-400 hover:bg-slate-800/80 active:scale-90 transition-all cursor-pointer"
                           title="Add reaction"
                         >
-                          <Smile className="w-3.5 h-3.5" />
+                          <Smile className="w-4 h-4" />
                         </button>
                         {isOwn && (
                           <>
                             <button
                               type="button"
                               onClick={() => handleStartEdit(msg)}
-                              className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                              className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800/80 active:scale-90 transition-all cursor-pointer"
                               title="Edit message"
                             >
                               <Pencil className="w-3.5 h-3.5" />
@@ -2187,7 +2206,7 @@ export default function ChatPage() {
                             <button
                               type="button"
                               onClick={() => handleDeleteMessage(msg.id)}
-                              className="p-1 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                              className="p-1.5 rounded-full text-slate-400 hover:text-red-400 hover:bg-slate-800/80 active:scale-90 transition-all cursor-pointer"
                               title="Delete message for everyone"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -2197,11 +2216,13 @@ export default function ChatPage() {
                       </div>
 
                       <div
-                        className={`flex-1 min-w-0 max-w-full px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-sm ${
+                        onDoubleClick={() => handleToggleReaction(msg.id, '❤️')}
+                        className={`flex-1 min-w-0 max-w-full px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-sm select-text cursor-pointer ${
                           isOwn
                             ? 'bg-emerald-600 text-white rounded-br-sm shadow-sm'
                             : 'bg-slate-900 border border-slate-800 text-slate-100 rounded-bl-sm shadow-sm'
                         }`}
+                        title="Double-click to react with ❤️"
                       >
                         {showCiphertext ? (
                           <div className="font-mono text-xs space-y-1">
@@ -2260,7 +2281,7 @@ export default function ChatPage() {
 
                     {/* Message Reaction Badges */}
                     {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                      <div className={`flex flex-wrap gap-1 mt-1 px-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`flex flex-wrap items-center gap-1 mt-1 px-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
                         {Object.entries(msg.reactions).map(([emoji, userIds]) => {
                           const hasReacted = currentUser && userIds.includes(currentUser.id);
                           return (
@@ -2268,7 +2289,7 @@ export default function ChatPage() {
                               key={emoji}
                               type="button"
                               onClick={() => handleToggleReaction(msg.id, emoji)}
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all active:scale-95 shadow-sm ${
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs transition-all active:scale-90 shadow-sm select-none cursor-pointer ${
                                 hasReacted
                                   ? 'bg-emerald-950/90 border border-emerald-500 text-emerald-300 font-semibold shadow-emerald-900/30 ring-1 ring-emerald-500/30'
                                   : 'bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200'
@@ -2280,6 +2301,14 @@ export default function ChatPage() {
                             </button>
                           );
                         })}
+                        <button
+                          type="button"
+                          onClick={() => setActiveReactionMsgId(activeReactionMsgId === msg.id ? null : msg.id)}
+                          className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-400 hover:text-emerald-400 transition-colors text-xs active:scale-90 cursor-pointer"
+                          title="Add reaction"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
                       </div>
                     )}
                   </div>
