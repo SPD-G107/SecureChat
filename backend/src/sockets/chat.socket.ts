@@ -54,6 +54,21 @@ export const setupChatSockets = (io: Server) => {
     // Send the full list of currently online user IDs to the newly connected socket
     socket.emit('users:online_list', Array.from(onlineUsers.keys()));
 
+    // Auto-deliver all pending messages to this connected user and notify senders
+    ConversationRepository.markAllPendingMessagesAsDeliveredTo(userId)
+      .then((affected) => {
+        for (const item of affected) {
+          io.to(`user:${item.senderId}`).emit('message:status_updated', {
+            peerId: userId,
+            conversationId: item.conversationId,
+            status: 'delivered',
+          });
+        }
+      })
+      .catch((err) => {
+        logger.error('Failed to auto-deliver pending messages on connect:', err.message);
+      });
+
     socket.on('message:send', async (data: {
       clientTempId?: string;
       conversationId?: string;

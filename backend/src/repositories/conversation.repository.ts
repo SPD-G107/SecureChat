@@ -123,6 +123,35 @@ export class ConversationRepository {
     return null;
   }
 
+  static async markAllPendingMessagesAsDeliveredTo(recipientId: string): Promise<Array<{ senderId: string; conversationId: string }>> {
+    const rows = await query<any[]>(
+      `SELECT DISTINCT m.sender_id, m.conversation_id
+       FROM messages m
+       JOIN conversations c ON m.conversation_id = c.id
+       WHERE (c.participant1_id = ? OR c.participant2_id = ?)
+         AND m.sender_id != ?
+         AND m.delivery_status = 'sent'`,
+      [recipientId, recipientId, recipientId]
+    );
+
+    if (rows && rows.length > 0) {
+      await query(
+        `UPDATE messages m
+         JOIN conversations c ON m.conversation_id = c.id
+         SET m.delivery_status = 'delivered'
+         WHERE (c.participant1_id = ? OR c.participant2_id = ?)
+           AND m.sender_id != ?
+           AND m.delivery_status = 'sent'`,
+        [recipientId, recipientId, recipientId]
+      );
+    }
+
+    return (rows || []).map((r) => ({
+      senderId: r.sender_id,
+      conversationId: r.conversation_id,
+    }));
+  }
+
   static async editMessage(
     messageId: string,
     senderId: string,
