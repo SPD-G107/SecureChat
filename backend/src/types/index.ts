@@ -47,5 +47,6 @@ export interface MessageRecord {
   ephemeral_public_key?: string | null;
   delivery_status: 'sent' | 'delivered' | 'read';
   is_edited?: boolean;
+  reactions?: Record<string, string[]>;
   created_at: Date;
 }

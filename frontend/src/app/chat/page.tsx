@@ -29,6 +29,7 @@ import {
   MoreVertical,
   CheckCircle2,
   Eraser,
+  Smile,
 } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
@@ -90,6 +91,8 @@ export default function ChatPage() {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [isChatMenuOpen, setIsChatMenuOpen] = useState(false);
+  const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
+  const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '😡'];
 
   // Real Socket.IO Presence Tracking
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -490,6 +493,60 @@ export default function ChatPage() {
         });
       });
 
+      // Real-time message reacted (Emoji Reaction)
+      socket.on('message:reacted', (data: {
+        messageId: string;
+        userId: string;
+        emoji: string;
+        action: 'added' | 'removed' | 'updated';
+        conversationId?: string;
+        reactions?: Record<string, string[]>;
+      }) => {
+        if (!data || !data.messageId) return;
+        setMessagesMap((prev) => {
+          const updated = { ...prev };
+          let changed = false;
+          for (const key of Object.keys(updated)) {
+            const prevMsgs = updated[key];
+            if (prevMsgs.some((m) => m.id === data.messageId)) {
+              changed = true;
+              const newMsgs = prevMsgs.map((m) => {
+                if (m.id === data.messageId) {
+                  let nextReactions: Record<string, string[]> = data.reactions
+                    ? { ...data.reactions }
+                    : { ...(m.reactions || {}) };
+
+                  if (!data.reactions) {
+                    for (const e in nextReactions) {
+                      nextReactions[e] = nextReactions[e].filter((u) => u !== data.userId);
+                      if (nextReactions[e].length === 0) delete nextReactions[e];
+                    }
+                    if (data.action !== 'removed') {
+                      if (!nextReactions[data.emoji]) nextReactions[data.emoji] = [];
+                      if (!nextReactions[data.emoji].includes(data.userId)) {
+                        nextReactions[data.emoji].push(data.userId);
+                      }
+                    }
+                  }
+
+                  return {
+                    ...m,
+                    reactions: nextReactions,
+                  };
+                }
+                return m;
+              });
+
+              updated[key] = newMsgs;
+              if (parsedUser?.id) {
+                localStorage.setItem(`securechat_msgs_${parsedUser.id}_${key}`, JSON.stringify(newMsgs));
+              }
+            }
+          }
+          return changed ? updated : prev;
+        });
+      });
+
       // 9. Real-time conversation cleared
       socket.on('conversation:cleared', (data: { conversationId: string }) => {
         if (!data || !data.conversationId) return;
@@ -840,12 +897,13 @@ export default function ChatPage() {
                   timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                   status: resolvedStatus,
                   isEdited: Boolean(m.is_edited),
+                  reactions: m.reactions || matchedLocal?.reactions || {},
                   createdAt: typeof m.created_at === 'string' ? m.created_at : new Date(m.created_at).toISOString(),
                 };
               })
             );
 
-            // Reconcile and save into localStorage with decrypted plaintext
+            // Reconcile and save into localStorage with decrypted plaintext and reactions
             const finalMsgs = loadedMsgs.map((remote) => {
               const loc = localSaved.find(
                 (l) => l.id === remote.id || (l.encryptedPreview && l.encryptedPreview === remote.encryptedPreview)
@@ -855,6 +913,7 @@ export default function ChatPage() {
                     ...remote,
                     text: loc.text,
                     isEdited: Boolean(remote.isEdited || loc.isEdited),
+                    reactions: remote.reactions && Object.keys(remote.reactions).length > 0 ? remote.reactions : loc.reactions || {},
                     createdAt: remote.createdAt || loc.createdAt,
                   }
                 : remote;
@@ -922,6 +981,59 @@ export default function ChatPage() {
       loadActiveConversations(currentUser);
     } catch (err: any) {
       console.error('Failed to delete message:', err);
+    }
+  };
+
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    if (!currentUser || !activeContact) return;
+
+    // 1. Optimistic UI update
+    setMessagesMap((prev) => {
+      const currentList = prev[activeContact.id] || [];
+      const updated = currentList.map((m) => {
+        if (m.id === messageId) {
+          const nextReactions: Record<string, string[]> = { ...(m.reactions || {}) };
+          const userAlreadyReacted = nextReactions[emoji]?.includes(currentUser.id);
+
+          // Remove user's previous reaction from any emoji on this message
+          for (const e in nextReactions) {
+            nextReactions[e] = nextReactions[e].filter((u) => u !== currentUser.id);
+            if (nextReactions[e].length === 0) delete nextReactions[e];
+          }
+
+          // If they had not reacted with this emoji, add it
+          if (!userAlreadyReacted) {
+            if (!nextReactions[emoji]) nextReactions[emoji] = [];
+            nextReactions[emoji].push(currentUser.id);
+          }
+
+          return { ...m, reactions: nextReactions };
+        }
+        return m;
+      });
+
+      if (currentUser?.id) {
+        localStorage.setItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`, JSON.stringify(updated));
+      }
+      return { ...prev, [activeContact.id]: updated };
+    });
+
+    // 2. Emit via Socket.IO for instant delivery to recipient
+    const socket = getSocket();
+    if (socket && socket.connected) {
+      socket.emit('message:react', {
+        messageId,
+        emoji,
+        recipientId: activeContact.id,
+        conversationId: `conv-${activeContact.id}`,
+      });
+    }
+
+    // 3. Persist in MySQL via REST API
+    try {
+      await ApiClient.post(`/messages/${messageId}/react`, { emoji });
+    } catch (err: any) {
+      console.warn('Failed to persist reaction in MySQL:', err.message);
     }
   };
 
@@ -1587,30 +1699,75 @@ export default function ChatPage() {
                     )}
 
                     <div
-                      className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} mb-1.5`}
+                      className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} mb-1.5 relative`}
                     >
-                    <div className={`flex items-center gap-1.5 max-w-[85%] sm:max-w-[70%] ${isOwn ? 'flex-row' : 'flex-row-reverse'}`}>
-                      {/* Message Hover Actions for Sender */}
-                      {isOwn && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleStartEdit(msg)}
-                            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                            title="Edit message"
+                    <div className={`flex items-center gap-1.5 max-w-[85%] sm:max-w-[70%] ${isOwn ? 'flex-row' : 'flex-row-reverse'} relative`}>
+                      {/* Floating Emoji Reaction Picker Bar */}
+                      {activeReactionMsgId === msg.id && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-30"
+                            onClick={() => setActiveReactionMsgId(null)}
+                          />
+                          <div
+                            className={`absolute z-40 -top-11 ${
+                              isOwn ? 'right-0' : 'left-0'
+                            } flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl animate-in zoom-in-95 duration-150`}
                           >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteMessage(msg.id)}
-                            className="p-1 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
-                            title="Delete message for everyone"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                            {REACTION_EMOJIS.map((emoji) => {
+                              const isMyReaction = currentUser && msg.reactions?.[emoji]?.includes(currentUser.id);
+                              return (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => {
+                                    handleToggleReaction(msg.id, emoji);
+                                    setActiveReactionMsgId(null);
+                                  }}
+                                  className={`text-base sm:text-lg hover:scale-130 active:scale-95 transition-transform p-1 rounded-full ${
+                                    isMyReaction ? 'bg-emerald-500/20 ring-1 ring-emerald-400 scale-110' : 'hover:bg-slate-800/80'
+                                  }`}
+                                  title={`React with ${emoji}`}
+                                >
+                                  {emoji}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
                       )}
+
+                      {/* Message Actions (Emoji Reaction trigger + Edit/Delete) */}
+                      <div className="opacity-70 sm:opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setActiveReactionMsgId(activeReactionMsgId === msg.id ? null : msg.id)}
+                          className="p-1 rounded-md text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors"
+                          title="Add reaction"
+                        >
+                          <Smile className="w-3.5 h-3.5" />
+                        </button>
+                        {isOwn && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(msg)}
+                              className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                              title="Edit message"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              className="p-1 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                              title="Delete message for everyone"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
 
                       <div
                         className={`flex-1 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-sm ${
@@ -1673,6 +1830,31 @@ export default function ChatPage() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Message Reaction Badges */}
+                    {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                      <div className={`flex flex-wrap gap-1 mt-1 px-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                        {Object.entries(msg.reactions).map(([emoji, userIds]) => {
+                          const hasReacted = currentUser && userIds.includes(currentUser.id);
+                          return (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => handleToggleReaction(msg.id, emoji)}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all active:scale-95 shadow-sm ${
+                                hasReacted
+                                  ? 'bg-emerald-950/90 border border-emerald-500 text-emerald-300 font-semibold shadow-emerald-900/30 ring-1 ring-emerald-500/30'
+                                  : 'bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200'
+                              }`}
+                              title={`${userIds.length} ${userIds.length === 1 ? 'reaction' : 'reactions'}`}
+                            >
+                              <span className="text-xs leading-none">{emoji}</span>
+                              {userIds.length > 1 && <span className="text-[10px] font-mono leading-none">{userIds.length}</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </React.Fragment>
                 );

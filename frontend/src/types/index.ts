@@ -34,6 +34,7 @@ export interface ChatMessage {
   timestamp: string;
   status: 'sent' | 'delivered' | 'read';
   isEdited?: boolean;
+  reactions?: Record<string, string[]>;
   createdAt?: string;
 }
 
