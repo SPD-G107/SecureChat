@@ -1078,9 +1078,121 @@ export default function ChatPage() {
       });
     }
 
+    // Helper to handle incoming call triggered via Web Push notification click
+    const triggerIncomingCallAccept = async (callerId: string, isVideo: boolean, action: string) => {
+      if (!callerId) return;
+      if (activeCallPeerRef.current?.id === callerId && callState === 'connected') {
+        return;
+      }
+
+      // 1. Resolve caller Contact details
+      let callerContact: Contact | null = null;
+      try {
+        const res = await ApiClient.get(`/users/${callerId}`);
+        if (res && res.user) {
+          callerContact = {
+            id: res.user.id,
+            username: res.user.username,
+            displayName: res.user.displayName || res.user.username,
+            avatarUrl: res.user.avatarUrl || null,
+            role: res.user.role || 'user',
+            status: res.user.status || 'active',
+            avatarInitials: (res.user.username || 'U').slice(0, 2).toUpperCase(),
+            isOnline: true,
+            publicKeyVersion: 1,
+            fingerprint: '',
+          };
+        }
+      } catch (e) {
+        console.warn('[Call] Failed to fetch caller profile from API:', e);
+      }
+
+      if (!callerContact) {
+        callerContact = {
+          id: callerId,
+          username: 'User',
+          displayName: 'SecureChat User',
+          avatarUrl: null,
+          role: 'user',
+          status: 'active',
+          avatarInitials: 'SC',
+          isOnline: true,
+          publicKeyVersion: 1,
+          fingerprint: '',
+        };
+      }
+
+      // 2. Set active chat contact and active call peer
+      setActiveContact(callerContact);
+      activeContactRef.current = callerContact;
+      setActiveCallPeer(callerContact);
+      activeCallPeerRef.current = callerContact;
+      setIsCallVideo(isVideo);
+      isCallVideoRef.current = isVideo;
+
+      // 3. Immediately answer call if action is accept
+      if (action === 'accept') {
+        CallAudioEngine.stopAll();
+        try {
+          const stream = await getMediaStream(isVideo, 'user');
+          localStreamRef.current = stream;
+          setLocalStream(stream);
+
+          createPeerConnection(callerContact.id);
+          setCallState('connected');
+
+          const sendAccept = () => {
+            const s = getSocket();
+            s?.emit('call:accept', { callerId: callerContact!.id });
+          };
+
+          if (socket && socket.connected) {
+            sendAccept();
+          } else if (socket) {
+            socket.once('connect', sendAccept);
+          }
+        } catch (err: any) {
+          console.warn('[Call] Auto-accept stream error, presenting incoming call modal:', err);
+          setCallState('incoming');
+          CallAudioEngine.startIncomingRingtone();
+        }
+      } else {
+        setCallState('incoming');
+        CallAudioEngine.startIncomingRingtone();
+      }
+    };
+
+    // Parse URL query parameters if launched or navigated from push notification
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const callWith = searchParams.get('callWith');
+      const isVideoParam = searchParams.get('isVideo') === '1' || searchParams.get('isVideo') === 'true';
+      const actionParam = searchParams.get('action') || 'accept';
+
+      if (callWith) {
+        window.history.replaceState({}, '', '/chat');
+        triggerIncomingCallAccept(callWith, isVideoParam, actionParam);
+      }
+    }
+
+    // Listen for background service worker notification clicks when tab was already active
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'SECURECHAT_CALL_ACTION') {
+        const { callerId, isVideo, action } = event.data;
+        triggerIncomingCallAccept(callerId, Boolean(isVideo), action || 'accept');
+      }
+    };
+
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+
     return () => {
       cleanupCall();
       disconnectSocket();
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
     };
   }, [router]);
 

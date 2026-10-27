@@ -127,10 +127,24 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
+  const isCall = data.type === 'incoming_call';
+  if (isCall && data.callerId) {
+    const callAction = action === 'accept' ? 'accept' : 'accept';
+    targetUrl = `/chat?callWith=${data.callerId}&isVideo=${data.isVideo ? '1' : '0'}&action=${callAction}`;
+  }
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if ('focus' in client) {
+          if (isCall && data.callerId) {
+            client.postMessage({
+              type: 'SECURECHAT_CALL_ACTION',
+              callerId: data.callerId,
+              isVideo: Boolean(data.isVideo),
+              action: action === 'accept' ? 'accept' : 'accept',
+            });
+          }
           client.navigate(targetUrl);
           return client.focus();
         }
