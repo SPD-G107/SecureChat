@@ -674,6 +674,18 @@ docker compose up --build
    - Open `http://localhost:3000` in Window B / Incognito (e.g. login as `@lang`).
    - Exchange messages between both tabs to observe instant Socket.IO delivery, real-time AES-256-GCM ciphertext inspection, and zero plaintext exposure to the server.
 
+### 16.8 E2EE WebRTC Voice & Video Calling Flow
+1. **Peer-to-Peer Encryption Architecture**:
+   - Voice and video calls are established directly between client browsers using native WebRTC DTLS-SRTP (RFC 5763 / RFC 5764).
+   - Audio and video media packets never transit through the Node.js server or any third-party recording cloud.
+   - Socket.IO is utilized strictly for out-of-band signaling (SDP offer/answer exchange and ICE candidate relay).
+2. **Client-Side Audio Synthesizers**:
+   - Ringing tones (outgoing British cadence) and melodic incoming chimes are synthesized directly in the browser via HTML5 Web Audio API (`AudioContext`), requiring zero external audio assets or MP3 files.
+3. **Interactive View Swapping & Mobile Controls**:
+   - Tap the picture-in-picture (PiP) video preview or header button to swap between the primary camera view and the corner window.
+   - Dynamic real-time connection status pill (`🟢 E2EE Connected`, `🟡 Connecting P2P...`, `🔴 Connection Failed`).
+   - Camera flip support for dual-camera smartphones, microphone mute toggle, and camera privacy shutter.
+
 
 
 
