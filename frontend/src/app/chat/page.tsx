@@ -41,12 +41,14 @@ import {
   Volume2,
   Phone,
   Video,
+  Bell,
 } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
 import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket-client';
 import CallModal, { CallState } from '@/components/chat/CallModal';
 import { CallAudioEngine } from '@/lib/call-audio';
+import { registerPushSubscription, requestPushNotificationPermission } from '@/lib/push-client';
 
 interface ConversationItem {
   id: string;
@@ -107,6 +109,7 @@ export default function ChatPage() {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [isChatMenuOpen, setIsChatMenuOpen] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
 
   // Media attachments & Voice Recording State
   const [selectedImagePreview, setSelectedImagePreview] = useState<{ data: string; name: string } | null>(null);
@@ -516,6 +519,18 @@ export default function ChatPage() {
         .generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
         .then((k) => setCryptoKey(k))
         .catch(() => {});
+    }
+
+    // Register Web Push subscription for background incoming call and message wakeups
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        registerPushSubscription().catch(() => {});
+      } else if (Notification.permission === 'default') {
+        const dismissed = sessionStorage.getItem('securechat_push_prompt_dismissed');
+        if (!dismissed) {
+          setShowNotificationPrompt(true);
+        }
+      }
     }
 
     // Connect real-time Socket.IO
@@ -2141,8 +2156,41 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden overflow-x-hidden h-[calc(100dvh-3.5rem)] max-h-[calc(100dvh-3.5rem)] min-h-0 bg-[#0b0f19] w-full max-w-full">
-      {/* Sidebar: Active Conversations (Telegram / Signal style) */}
+    <div className="flex-1 flex flex-col overflow-hidden overflow-x-hidden h-[calc(100dvh-3.5rem)] max-h-[calc(100dvh-3.5rem)] min-h-0 bg-[#0b0f19] w-full max-w-full">
+      {/* Background Incoming Call & Push Notification Prompt */}
+      {showNotificationPrompt && (
+        <div className="bg-emerald-950/95 border-b border-emerald-800/80 px-4 py-2 flex items-center justify-between text-xs text-emerald-200 z-40 shrink-0 backdrop-blur-md animate-in slide-in-from-top duration-200">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bell className="w-4 h-4 text-emerald-400 shrink-0 animate-bounce" />
+            <span className="truncate sm:whitespace-normal">
+              Enable background notifications to see incoming calls and hear ringing when your screen is locked.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={async () => {
+                const granted = await requestPushNotificationPermission();
+                if (granted) setShowNotificationPrompt(false);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] shadow-sm transition-all cursor-pointer"
+            >
+              Enable
+            </button>
+            <button
+              onClick={() => {
+                sessionStorage.setItem('securechat_push_prompt_dismissed', '1');
+                setShowNotificationPrompt(false);
+              }}
+              className="p-1 text-slate-400 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 flex overflow-hidden overflow-x-hidden min-h-0 w-full max-w-full">
+        {/* Sidebar: Active Conversations (Telegram / Signal style) */}
       <aside className={`${activeContact ? 'hidden md:flex' : 'flex'} w-full md:w-72 lg:w-80 bg-slate-900/40 border-r border-slate-800 flex-col shrink-0 h-full max-h-full min-h-0 overflow-hidden`}>
         {/* Sidebar Header & Start New Chat Button */}
         <div className="p-3.5 border-b border-slate-800 shrink-0">
@@ -3173,6 +3221,7 @@ export default function ChatPage() {
           </div>
         </div>
       )}
+      </div>
 
       {/* WebRTC Audio & Video Call Overlay Modal */}
       <CallModal

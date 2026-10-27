@@ -11,6 +11,7 @@ import keysRoutes from './routes/keys.routes.js';
 import conversationsRoutes from './routes/conversations.routes.js';
 import messagesRoutes from './routes/messages.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import pushRoutes from './routes/push.routes.js';
 
 export const app = express();
 
@@ -58,6 +59,7 @@ app.use('/api/v1/keys', keysRoutes);
 app.use('/api/v1/conversations', conversationsRoutes);
 app.use('/api/v1/messages', messagesRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/push', pushRoutes);
 
 // Error handling middleware
 app.use(errorHandler);

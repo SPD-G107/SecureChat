@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { ENV } from '../config/env.js';
 import { AuthTokenPayload } from '../types/index.js';
 import { ConversationRepository } from '../repositories/conversation.repository.js';
+import { PushService } from '../services/push.service.js';
 import { logger } from '../utils/logger.js';
 
 interface AuthenticatedSocket extends Socket {
@@ -135,6 +136,14 @@ export const setupChatSockets = (io: Server) => {
           conversationId: targetConvId,
           status: initialStatus,
         });
+
+        // Dispatch background push notification if recipient is not actively connected
+        if (!isRecipientConnected) {
+          PushService.sendMessageNotification(recipientId, {
+            id: userId,
+            username: socket.user?.username || 'User',
+          }).catch(() => {});
+        }
       } catch (err: any) {
         logger.error('Failed to relay encrypted message:', err.message);
         socket.emit('message:error', { error: 'Failed to deliver message' });
@@ -246,21 +255,22 @@ export const setupChatSockets = (io: Server) => {
       const recipientRoom = io.sockets.adapter.rooms.get(`user:${recipientId}`);
       const isOnline = (recipientRoom?.size ?? 0) > 0;
 
-      if (!isOnline) {
-        socket.emit('call:unavailable', {
-          recipientId,
-          reason: 'User is offline',
-        });
-        return;
-      }
-
       logger.info(`WebRTC Call initiated from ${socket.user?.username} (${userId}) to ${recipientId} [Video: ${Boolean(isVideo)}]`);
 
-      io.to(`user:${recipientId}`).emit('call:incoming', {
-        callerId: userId,
-        callerUsername: socket.user?.username,
-        isVideo: Boolean(isVideo),
-      });
+      // Dispatch Web Push notification to wake up recipient's phone/background service worker
+      PushService.sendCallNotification(
+        recipientId,
+        { id: userId, username: socket.user?.username || 'User' },
+        Boolean(isVideo)
+      ).catch(() => {});
+
+      if (isOnline) {
+        io.to(`user:${recipientId}`).emit('call:incoming', {
+          callerId: userId,
+          callerUsername: socket.user?.username,
+          isVideo: Boolean(isVideo),
+        });
+      }
     });
 
     // 2. Recipient accepts incoming call
