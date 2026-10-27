@@ -39,10 +39,14 @@ import {
   Download,
   FileText,
   Volume2,
+  Phone,
+  Video,
 } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
 import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket-client';
+import CallModal, { CallState } from '@/components/chat/CallModal';
+import { CallAudioEngine } from '@/lib/call-audio';
 
 interface ConversationItem {
   id: string;
@@ -120,6 +124,22 @@ export default function ChatPage() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // WebRTC E2EE Audio & Video Calling State
+  const [callState, setCallState] = useState<CallState>('idle');
+  const [activeCallPeer, setActiveCallPeer] = useState<Contact | null>(null);
+  const [isCallVideo, setIsCallVideo] = useState(false);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const activeCallPeerRef = useRef<Contact | null>(null);
+  const isCallVideoRef = useRef<boolean>(false);
+  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+
   // Real Socket.IO Presence Tracking
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
 
@@ -179,6 +199,202 @@ export default function ChatPage() {
     );
     sharedKeysCache.current.set(cacheKey, fallbackKey);
     return fallbackKey;
+  };
+
+  // ==========================================
+  // WebRTC E2EE Audio & Video Call Engine
+  // ==========================================
+
+  const RTC_CONFIG: RTCConfiguration = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+    ],
+  };
+
+  const cleanupCall = () => {
+    CallAudioEngine.stopAll();
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    pendingCandidatesRef.current = [];
+    activeCallPeerRef.current = null;
+    setLocalStream(null);
+    setRemoteStream(null);
+    setActiveCallPeer(null);
+    setCallState('idle');
+    setIsMuted(false);
+    setIsCameraOff(false);
+  };
+
+  const getMediaStream = async (video: boolean, facing: 'user' | 'environment' = 'user'): Promise<MediaStream> => {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: video ? { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+    });
+  };
+
+  const createPeerConnection = (targetUserId: string): RTCPeerConnection => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+    }
+
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    peerConnectionRef.current = pc;
+
+    // Relay local ICE candidates to peer
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        const socket = getSocket();
+        socket?.emit('call:signal', {
+          targetUserId,
+          signalData: event.candidate,
+          type: 'candidate',
+        });
+      }
+    };
+
+    // Receive remote media stream
+    pc.ontrack = (event) => {
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
+      }
+    };
+
+    // Attach local stream tracks to PeerConnection
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => {
+        pc.addTrack(track, localStreamRef.current!);
+      });
+    }
+
+    return pc;
+  };
+
+  const startCall = async (video: boolean) => {
+    if (!activeContact || !currentUser) return;
+    try {
+      const stream = await getMediaStream(video, 'user');
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setIsCallVideo(video);
+      isCallVideoRef.current = video;
+      setActiveCallPeer(activeContact);
+      activeCallPeerRef.current = activeContact;
+      setCallState('calling');
+      CallAudioEngine.startOutgoingRingtone();
+
+      const socket = getSocket();
+      socket?.emit('call:initiate', {
+        recipientId: activeContact.id,
+        isVideo: video,
+      });
+    } catch (err: any) {
+      alert('Unable to access microphone/camera: ' + err.message);
+      cleanupCall();
+    }
+  };
+
+  const acceptIncomingCall = async () => {
+    const peer = activeCallPeerRef.current;
+    if (!peer) return;
+    CallAudioEngine.stopAll();
+
+    try {
+      const video = isCallVideoRef.current;
+      const stream = await getMediaStream(video, 'user');
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+
+      const pc = createPeerConnection(peer.id);
+      setCallState('connected');
+
+      // Process any buffered early candidates
+      while (pendingCandidatesRef.current.length > 0) {
+        const cand = pendingCandidatesRef.current.shift();
+        if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand));
+      }
+
+      const socket = getSocket();
+      socket?.emit('call:accept', { callerId: peer.id });
+    } catch (err: any) {
+      alert('Could not start media devices: ' + err.message);
+      cleanupCall();
+    }
+  };
+
+  const rejectIncomingCall = () => {
+    const peer = activeCallPeerRef.current;
+    if (peer) {
+      const socket = getSocket();
+      socket?.emit('call:reject', { callerId: peer.id, reason: 'declined' });
+    }
+    CallAudioEngine.playHangupTone();
+    cleanupCall();
+  };
+
+  const endActiveCall = () => {
+    const peer = activeCallPeerRef.current;
+    if (peer) {
+      const socket = getSocket();
+      socket?.emit('call:end', { targetUserId: peer.id });
+    }
+    CallAudioEngine.playHangupTone();
+    cleanupCall();
+  };
+
+  const toggleMic = () => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+      }
+    }
+  };
+
+  const toggleCamera = () => {
+    if (localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsCameraOff(!videoTrack.enabled);
+      }
+    }
+  };
+
+  const flipCamera = async () => {
+    if (!isCallVideoRef.current || !localStreamRef.current) return;
+    const nextFacing = facingMode === 'user' ? 'environment' : 'user';
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: nextFacing, width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      const oldVideoTrack = localStreamRef.current.getVideoTracks()[0];
+
+      if (peerConnectionRef.current) {
+        const senders = peerConnectionRef.current.getSenders();
+        const sender = senders.find((s) => s.track?.kind === 'video');
+        if (sender && newVideoTrack) {
+          sender.replaceTrack(newVideoTrack);
+        }
+      }
+
+      localStreamRef.current.removeTrack(oldVideoTrack);
+      oldVideoTrack.stop();
+      localStreamRef.current.addTrack(newVideoTrack);
+      setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+      setFacingMode(nextFacing);
+    } catch (err: any) {
+      console.warn('Cannot flip camera:', err);
+    }
   };
 
   // 1. Initial Authentication & Load Active Conversations
@@ -624,9 +840,97 @@ export default function ChatPage() {
           }
         }
       });
+
+      // 12. Real-time WebRTC Call Signaling Listeners
+      socket.on('call:incoming', (data: { callerId: string; callerUsername?: string; isVideo?: boolean }) => {
+        const contact: Contact = directoryUsers.find((u) => u.id === data.callerId) ||
+          conversations.find((c) => c.peer_id === data.callerId)?.contact || {
+            id: data.callerId,
+            username: data.callerUsername || 'Unknown User',
+            displayName: data.callerUsername || 'Unknown User',
+            avatarUrl: null,
+            role: 'user',
+            status: 'active',
+            avatarInitials: (data.callerUsername || 'U').slice(0, 2).toUpperCase(),
+            isOnline: true,
+            publicKeyVersion: 1,
+            fingerprint: '',
+          };
+
+        activeCallPeerRef.current = contact;
+        setActiveCallPeer(contact);
+        setIsCallVideo(Boolean(data.isVideo));
+        isCallVideoRef.current = Boolean(data.isVideo);
+        setCallState('incoming');
+        CallAudioEngine.startIncomingRingtone();
+      });
+
+      socket.on('call:accepted', async (data: { recipientId: string }) => {
+        CallAudioEngine.stopAll();
+        setCallState('connected');
+        const pc = createPeerConnection(data.recipientId);
+
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit('call:signal', {
+            targetUserId: data.recipientId,
+            signalData: offer,
+            type: 'offer',
+          });
+        } catch (err: any) {
+          console.error('Failed to create WebRTC offer:', err);
+          cleanupCall();
+        }
+      });
+
+      socket.on('call:rejected', (data: { reason?: string }) => {
+        CallAudioEngine.playHangupTone();
+        cleanupCall();
+      });
+
+      socket.on('call:unavailable', (data: { reason?: string }) => {
+        CallAudioEngine.playHangupTone();
+        alert('User is currently offline or unavailable for calls.');
+        cleanupCall();
+      });
+
+      socket.on('call:ended', () => {
+        CallAudioEngine.playHangupTone();
+        cleanupCall();
+      });
+
+      socket.on('call:signal', async (data: { senderId: string; signalData: any; type: 'offer' | 'answer' | 'candidate' }) => {
+        const pc = peerConnectionRef.current;
+        if (!pc) return;
+
+        try {
+          if (data.type === 'offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.signalData));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit('call:signal', {
+              targetUserId: data.senderId,
+              signalData: answer,
+              type: 'answer',
+            });
+          } else if (data.type === 'answer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.signalData));
+          } else if (data.type === 'candidate') {
+            if (pc.remoteDescription) {
+              await pc.addIceCandidate(new RTCIceCandidate(data.signalData));
+            } else {
+              pendingCandidatesRef.current.push(data.signalData);
+            }
+          }
+        } catch (err: any) {
+          console.error('WebRTC signal processing error:', err);
+        }
+      });
     }
 
     return () => {
+      cleanupCall();
       disconnectSocket();
     };
   }, [router]);
@@ -1966,6 +2270,28 @@ export default function ChatPage() {
 
               {/* Action Buttons & Responsive Overflow Menu */}
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 relative">
+                {/* Voice Call Button (E2EE WebRTC) */}
+                <button
+                  type="button"
+                  onClick={() => startCall(false)}
+                  className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all active:scale-95 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700 cursor-pointer"
+                  title="Voice Call (E2EE WebRTC)"
+                >
+                  <Phone className="w-4 h-4 text-emerald-400" />
+                  <span className="hidden xl:inline">Call</span>
+                </button>
+
+                {/* Video Call Button (E2EE WebRTC) */}
+                <button
+                  type="button"
+                  onClick={() => startCall(true)}
+                  className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all active:scale-95 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700 cursor-pointer"
+                  title="Video Call (E2EE WebRTC)"
+                >
+                  <Video className="w-4 h-4 text-emerald-400" />
+                  <span className="hidden xl:inline">Video</span>
+                </button>
+
                 {/* Ciphertext / Plaintext Toggle (Quick icon button) */}
                 <button
                   onClick={() => setShowCiphertext(!showCiphertext)}
@@ -2032,6 +2358,30 @@ export default function ChatPage() {
                         onClick={() => setIsChatMenuOpen(false)}
                       />
                       <div className="absolute right-0 top-full mt-2 w-52 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95">
+                        <button
+                          onClick={() => {
+                            setIsChatMenuOpen(false);
+                            startCall(false);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 transition-colors text-left"
+                        >
+                          <Phone className="w-4 h-4 text-emerald-400" />
+                          <span>Voice Call (E2EE)</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setIsChatMenuOpen(false);
+                            startCall(true);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800 transition-colors text-left"
+                        >
+                          <Video className="w-4 h-4 text-emerald-400" />
+                          <span>Video Call (E2EE)</span>
+                        </button>
+
+                        <div className="h-px bg-slate-800 my-1" />
+
                         <Link
                           href={`/verify-key?user=${activeContact.username}`}
                           onClick={() => setIsChatMenuOpen(false)}
@@ -2689,6 +3039,23 @@ export default function ChatPage() {
           </div>
         </div>
       )}
+
+      {/* WebRTC Audio & Video Call Overlay Modal */}
+      <CallModal
+        callState={callState}
+        peer={activeCallPeer}
+        isVideo={isCallVideo}
+        localStream={localStream}
+        remoteStream={remoteStream}
+        isMuted={isMuted}
+        isCameraOff={isCameraOff}
+        onAccept={acceptIncomingCall}
+        onReject={rejectIncomingCall}
+        onEndCall={endActiveCall}
+        onToggleMic={toggleMic}
+        onToggleCamera={toggleCamera}
+        onFlipCamera={flipCamera}
+      />
     </div>
   );
 }

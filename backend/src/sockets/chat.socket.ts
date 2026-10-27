@@ -236,6 +236,68 @@ export const setupChatSockets = (io: Server) => {
       }
     });
 
+    // ==========================================
+    // WebRTC E2EE Audio & Video Call Signaling
+    // ==========================================
+
+    // 1. Caller initiates an outgoing audio or video call
+    socket.on('call:initiate', (data: { recipientId: string; isVideo?: boolean }) => {
+      const { recipientId, isVideo } = data;
+      const recipientRoom = io.sockets.adapter.rooms.get(`user:${recipientId}`);
+      const isOnline = (recipientRoom?.size ?? 0) > 0;
+
+      if (!isOnline) {
+        socket.emit('call:unavailable', {
+          recipientId,
+          reason: 'User is offline',
+        });
+        return;
+      }
+
+      logger.info(`WebRTC Call initiated from ${socket.user?.username} (${userId}) to ${recipientId} [Video: ${Boolean(isVideo)}]`);
+
+      io.to(`user:${recipientId}`).emit('call:incoming', {
+        callerId: userId,
+        callerUsername: socket.user?.username,
+        isVideo: Boolean(isVideo),
+      });
+    });
+
+    // 2. Recipient accepts incoming call
+    socket.on('call:accept', (data: { callerId: string }) => {
+      logger.info(`WebRTC Call accepted by ${socket.user?.username} (${userId}) from caller ${data.callerId}`);
+      io.to(`user:${data.callerId}`).emit('call:accepted', {
+        recipientId: userId,
+        recipientUsername: socket.user?.username,
+      });
+    });
+
+    // 3. Recipient or caller rejects/declines call
+    socket.on('call:reject', (data: { callerId: string; reason?: string }) => {
+      logger.info(`WebRTC Call rejected by ${socket.user?.username} (${userId}) for ${data.callerId} [Reason: ${data.reason || 'declined'}]`);
+      io.to(`user:${data.callerId}`).emit('call:rejected', {
+        recipientId: userId,
+        reason: data.reason || 'declined',
+      });
+    });
+
+    // 4. Relay WebRTC SDP offer, answer, and ICE candidates between peers
+    socket.on('call:signal', (data: { targetUserId: string; signalData: any; type: 'offer' | 'answer' | 'candidate' }) => {
+      io.to(`user:${data.targetUserId}`).emit('call:signal', {
+        senderId: userId,
+        signalData: data.signalData,
+        type: data.type,
+      });
+    });
+
+    // 5. Either peer hangs up or ends the call
+    socket.on('call:end', (data: { targetUserId: string }) => {
+      logger.info(`WebRTC Call ended by ${socket.user?.username} (${userId}) with ${data.targetUserId}`);
+      io.to(`user:${data.targetUserId}`).emit('call:ended', {
+        endedBy: userId,
+      });
+    });
+
     socket.on('disconnect', () => {
       const remaining = (onlineUsers.get(userId) || 1) - 1;
       if (remaining <= 0) {
