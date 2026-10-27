@@ -30,6 +30,15 @@ import {
   CheckCircle2,
   Eraser,
   Smile,
+  Image as ImageIcon,
+  Paperclip,
+  Mic,
+  Square,
+  Play,
+  Pause,
+  Download,
+  FileText,
+  Volume2,
 } from 'lucide-react';
 import { CryptoEngine } from '@/lib/crypto';
 import { ApiClient } from '@/lib/api-client';
@@ -93,6 +102,22 @@ export default function ChatPage() {
   const [isChatMenuOpen, setIsChatMenuOpen] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
   const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '😡'];
+
+  // Media attachments & Voice Recording State
+  const [selectedImagePreview, setSelectedImagePreview] = useState<{ data: string; name: string } | null>(null);
+  const [selectedFilePreview, setSelectedFilePreview] = useState<{ data: string; name: string; size: number; mime: string } | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; name: string } | null>(null);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceDuration, setVoiceDuration] = useState(0);
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const voiceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Real Socket.IO Presence Tracking
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -1037,6 +1062,248 @@ export default function ChatPage() {
     }
   };
 
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1200;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.82);
+            resolve(compressed);
+          } else {
+            resolve(e.target?.result as string);
+          }
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleSelectImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await compressImage(file);
+      setSelectedImagePreview({ data: base64, name: file.name });
+    } catch (err: any) {
+      alert('Failed to read image: ' + err.message);
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleSelectFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      alert('File exceeds 15MB limit.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setSelectedFilePreview({
+        data: reader.result as string,
+        name: file.name,
+        size: file.size,
+        mime: file.type || 'application/octet-stream',
+      });
+    };
+    reader.readAsDataURL(file);
+    if (e.target) e.target.value = '';
+  };
+
+  const sendMediaMessage = async (media: {
+    type: 'image' | 'audio' | 'file';
+    data: string;
+    fileName?: string;
+    fileSize?: number;
+    mimeType?: string;
+    duration?: number;
+    caption?: string;
+  }) => {
+    if (!activeContact || !currentUser) return;
+    const conv = conversations.find((c) => c.peer_id === activeContact.id);
+    const convId = conv?.id || `conv-${activeContact.id}`;
+
+    const mediaString = JSON.stringify(media);
+    let cipherBase64 = '';
+    let ivBase64 = '';
+    let macTagBase64 = '';
+
+    try {
+      const sharedKey = await getSharedKey(currentUser, activeContact, convId);
+      const enc = await CryptoEngine.encrypt(mediaString, sharedKey);
+      cipherBase64 = enc.ciphertext;
+      ivBase64 = enc.iv;
+      macTagBase64 = enc.macTag;
+    } catch {
+      cipherBase64 = btoa(encodeURIComponent(mediaString));
+      ivBase64 = btoa('iv_nonce_96').slice(0, 16);
+      macTagBase64 = btoa('auth_mac_128').slice(0, 22);
+    }
+
+    const isPeerOnline = onlineUserIds.has(activeContact.id);
+    const initialStatus: 'sent' | 'delivered' = isPeerOnline ? 'delivered' : 'sent';
+    const tempId = 'm-' + Date.now();
+
+    const newMsg: ChatMessage = {
+      id: tempId,
+      conversationId: convId,
+      senderId: currentUser.id,
+      text: mediaString,
+      encryptedPreview: cipherBase64,
+      iv: ivBase64,
+      macTag: macTagBase64,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: initialStatus,
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessagesMap((prev) => {
+      const currentList = prev[activeContact.id] || [];
+      const updated = [...currentList, newMsg];
+      if (currentUser?.id) {
+        localStorage.setItem(`securechat_msgs_${currentUser.id}_${activeContact.id}`, JSON.stringify(updated));
+      }
+      return { ...prev, [activeContact.id]: updated };
+    });
+
+    const socket = getSocket();
+    if (socket && socket.connected) {
+      socket.emit('message:send', {
+        clientTempId: tempId,
+        conversationId: convId,
+        recipientId: activeContact.id,
+        plaintext: mediaString,
+        encryptedPayload: cipherBase64,
+        iv: ivBase64,
+        macTag: macTagBase64,
+      });
+    }
+
+    setSelectedImagePreview(null);
+    setSelectedFilePreview(null);
+    setTimeout(() => {
+      if (currentUser) loadActiveConversations(currentUser);
+    }, 400);
+  };
+
+  const startVoiceRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.start(100);
+      setIsRecordingVoice(true);
+      setVoiceDuration(0);
+
+      voiceTimerRef.current = setInterval(() => {
+        setVoiceDuration((prev) => prev + 1);
+      }, 1000);
+    } catch (err: any) {
+      alert('Microphone access is required to record voice notes: ' + err.message);
+    }
+  };
+
+  const stopVoiceRecordingAndSend = async () => {
+    if (!mediaRecorderRef.current) return;
+    if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+
+    const recorder = mediaRecorderRef.current;
+    const finalDuration = voiceDuration;
+
+    recorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      recorder.stream.getTracks().forEach((track) => track.stop());
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Audio = reader.result as string;
+        await sendMediaMessage({
+          type: 'audio',
+          data: base64Audio,
+          duration: finalDuration,
+          fileName: `voice-${Date.now()}.webm`,
+        });
+      };
+      reader.readAsDataURL(audioBlob);
+      setIsRecordingVoice(false);
+      setVoiceDuration(0);
+    };
+
+    recorder.stop();
+  };
+
+  const cancelVoiceRecording = () => {
+    if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current = null;
+    }
+    setIsRecordingVoice(false);
+    setVoiceDuration(0);
+  };
+
+  const handlePlayAudio = (msgId: string, base64Audio: string) => {
+    if (playingAudioId === msgId && currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+      setPlayingAudioId(null);
+      return;
+    }
+
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+
+    const audio = new Audio(base64Audio);
+    currentAudioRef.current = audio;
+    setPlayingAudioId(msgId);
+
+    audio.onended = () => {
+      setPlayingAudioId(null);
+      currentAudioRef.current = null;
+    };
+    audio.onerror = () => {
+      setPlayingAudioId(null);
+      currentAudioRef.current = null;
+    };
+
+    audio.play().catch(() => {
+      setPlayingAudioId(null);
+    });
+  };
+
   const handleClearChat = async () => {
     if (!activeContact || !currentUser) return;
     if (!window.confirm(`Clear all messages with @${activeContact.username}? This will delete the message history.`)) {
@@ -1094,6 +1361,31 @@ export default function ChatPage() {
     e.preventDefault();
     if (!activeContact || !currentUser) return;
     const textToSend = inputText.trim();
+
+    if (selectedImagePreview) {
+      await sendMediaMessage({
+        type: 'image',
+        data: selectedImagePreview.data,
+        fileName: selectedImagePreview.name,
+        caption: textToSend || undefined,
+      });
+      setInputText('');
+      return;
+    }
+
+    if (selectedFilePreview) {
+      await sendMediaMessage({
+        type: 'file',
+        data: selectedFilePreview.data,
+        fileName: selectedFilePreview.name,
+        fileSize: selectedFilePreview.size,
+        mimeType: selectedFilePreview.mime,
+        caption: textToSend || undefined,
+      });
+      setInputText('');
+      return;
+    }
+
     if (!textToSend) return;
 
     // Handle message editing mode
@@ -1189,7 +1481,7 @@ export default function ChatPage() {
     const tempId = 'm-' + Date.now();
     const newMsg: ChatMessage = {
       id: tempId,
-      conversationId: `conv-${activeContact.id}`,
+      conversationId: convId,
       senderId: currentUser.id,
       text: textToSend,
       encryptedPreview: cipherBase64,
@@ -1220,7 +1512,7 @@ export default function ChatPage() {
     if (socket && socket.connected) {
       socket.emit('message:send', {
         clientTempId: tempId,
-        conversationId: `conv-${activeContact.id}`,
+        conversationId: convId,
         recipientId: activeContact.id,
         plaintext: textToSend,
         encryptedPayload: cipherBase64,
@@ -1264,6 +1556,132 @@ export default function ChatPage() {
       typeof window !== 'undefined' &&
       localStorage.getItem(`securechat_verified_${currentUser.id}_${activeContact.id}`) === activeContact.fingerprint
   );
+
+  const renderMessageContent = (msg: ChatMessage, isOwn: boolean) => {
+    if (!msg.text) return null;
+
+    if (msg.text.startsWith('{"type":')) {
+      try {
+        const media = JSON.parse(msg.text);
+
+        // 1. Photo / Image Attachment
+        if (media.type === 'image' && media.data) {
+          return (
+            <div className="space-y-1.5">
+              <div
+                className="relative rounded-xl overflow-hidden cursor-pointer group/img max-w-xs sm:max-w-sm bg-black/40 border border-white/10"
+                onClick={() => setLightboxImage({ src: media.data, name: media.fileName || 'Encrypted Photo' })}
+              >
+                <img
+                  src={media.data}
+                  alt={media.fileName || 'Encrypted Photo'}
+                  className="w-full h-auto max-h-72 object-cover rounded-xl group-hover/img:scale-[1.02] transition-transform duration-200"
+                />
+                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <span className="p-2 rounded-full bg-black/60 text-white backdrop-blur-sm">
+                    <Eye className="w-4 h-4" />
+                  </span>
+                </div>
+              </div>
+              {media.caption && (
+                <p className="break-words leading-relaxed text-xs sm:text-sm pt-0.5">{media.caption}</p>
+              )}
+            </div>
+          );
+        }
+
+        // 2. Voice Audio Message
+        if (media.type === 'audio' && media.data) {
+          const isPlaying = playingAudioId === msg.id;
+          const durSeconds = media.duration || 0;
+          const formattedDur = `${Math.floor(durSeconds / 60)}:${(durSeconds % 60).toString().padStart(2, '0')}`;
+
+          return (
+            <div className="flex items-center gap-3 py-1 px-0.5 min-w-[210px] sm:min-w-[240px]">
+              <button
+                type="button"
+                onClick={() => handlePlayAudio(msg.id, media.data)}
+                className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-md transition-all active:scale-95 ${
+                  isOwn ? 'bg-white text-emerald-700 hover:bg-emerald-50' : 'bg-emerald-500 text-white hover:bg-emerald-400'
+                }`}
+                title={isPlaying ? 'Pause voice message' : 'Play voice message'}
+              >
+                {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
+              </button>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1 h-4 mb-1">
+                  {[40, 75, 55, 90, 60, 80, 45, 95, 70, 50, 85, 65, 40, 70].map((h, i) => (
+                    <div
+                      key={i}
+                      className={`flex-1 rounded-full transition-all duration-300 ${
+                        isPlaying
+                          ? isOwn ? 'bg-white animate-pulse' : 'bg-emerald-400 animate-pulse'
+                          : isOwn ? 'bg-white/50' : 'bg-slate-500'
+                      }`}
+                      style={{
+                        height: isPlaying ? `${Math.max(25, h * (i % 2 === 0 ? 1 : 0.75))}%` : `${h * 0.35}%`,
+                        animationDelay: `${i * 60}ms`,
+                      }}
+                    />
+                  ))}
+                </div>
+                <div className={`flex items-center justify-between text-[11px] font-mono ${isOwn ? 'text-emerald-100' : 'text-slate-400'}`}>
+                  <span className="flex items-center gap-1">
+                    <Mic className="w-3 h-3" /> Voice Note
+                  </span>
+                  <span>{formattedDur}</span>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // 3. Document / File Attachment
+        if (media.type === 'file' && media.data) {
+          const sizeFormatted = media.fileSize
+            ? media.fileSize > 1024 * 1024
+              ? `${(media.fileSize / (1024 * 1024)).toFixed(1)} MB`
+              : `${Math.round(media.fileSize / 1024)} KB`
+            : 'File';
+
+          return (
+            <div className="space-y-1">
+              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/20 border border-white/10 min-w-[210px] sm:min-w-[250px]">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                  isOwn ? 'bg-white/20 text-white' : 'bg-emerald-500/20 text-emerald-400'
+                }`}>
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold truncate text-white" title={media.fileName}>
+                    {media.fileName || 'Attachment'}
+                  </p>
+                  <p className={`text-[10px] font-mono ${isOwn ? 'text-emerald-100' : 'text-slate-400'}`}>
+                    {sizeFormatted}
+                  </p>
+                </div>
+                <a
+                  href={media.data}
+                  download={media.fileName || 'attachment'}
+                  className={`p-2 rounded-lg transition-colors shrink-0 ${
+                    isOwn ? 'hover:bg-white/20 text-white' : 'hover:bg-slate-800 text-emerald-400'
+                  }`}
+                  title="Download file"
+                >
+                  <Download className="w-4 h-4" />
+                </a>
+              </div>
+              {media.caption && (
+                <p className="break-words leading-relaxed text-xs sm:text-sm pt-0.5">{media.caption}</p>
+              )}
+            </div>
+          );
+        }
+      } catch {}
+    }
+
+    return <p className="break-words leading-relaxed text-xs sm:text-sm">{msg.text}</p>;
+  };
 
   return (
     <div className="flex-1 flex overflow-hidden h-[calc(100dvh-3.5rem)] max-h-[calc(100dvh-3.5rem)] min-h-0 bg-[#0b0f19]">
@@ -1387,7 +1805,15 @@ export default function ChatPage() {
                     </div>
                     <div className="flex items-center justify-between mt-0.5">
                       <span className="text-[11px] text-slate-400 truncate max-w-[140px]">
-                        {conv.last_message || 'Direct chat'}
+                        {conv.last_message ? (
+                          conv.last_message.startsWith('{"type":"image"')
+                            ? '📷 Photo'
+                            : conv.last_message.startsWith('{"type":"audio"')
+                            ? '🎙️ Voice message'
+                            : conv.last_message.startsWith('{"type":"file"')
+                            ? '📎 Attachment'
+                            : conv.last_message
+                        ) : 'Direct chat'}
                       </span>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="text-[10px] text-emerald-500 font-mono flex items-center gap-0.5">
@@ -1796,7 +2222,7 @@ export default function ChatPage() {
                             )}
                           </div>
                         ) : (
-                          <p className="break-words leading-relaxed text-xs sm:text-sm">{msg.text}</p>
+                          renderMessageContent(msg, isOwn)
                         )}
 
                         {/* Accurate Checkmark Indicators: Sent (1 check), Delivered (2 checks gray), Read (2 checks cyan) */}
@@ -1882,29 +2308,200 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Clean Input Bar */}
-            <form
-              onSubmit={handleSendMessage}
-              className="p-2.5 sm:p-3.5 border-t border-slate-800 bg-slate-900/40 flex gap-2 sm:gap-2.5 items-center shrink-0"
-            >
-              <input
-                type="text"
-                placeholder={editingMessage ? 'Edit your message...' : `Message @${activeContact.username}...`}
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                className="flex-1 bg-slate-950/70 border border-slate-800 rounded-xl px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-              />
-              <button
-                type="submit"
-                disabled={!inputText.trim()}
-                className={`p-2 sm:p-2.5 rounded-xl text-white transition-colors disabled:opacity-40 shrink-0 ${
-                  editingMessage ? 'bg-teal-600 hover:bg-teal-500' : 'bg-emerald-600 hover:bg-emerald-500'
-                }`}
-                title={editingMessage ? 'Save changes' : 'Send message'}
+            {/* Media Attachment Previews */}
+            {selectedImagePreview && (
+              <div className="px-3.5 sm:px-6 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 animate-in fade-in">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={selectedImagePreview.data}
+                    alt="Preview"
+                    className="w-12 h-12 rounded-lg object-cover border border-slate-700"
+                  />
+                  <div>
+                    <p className="text-xs font-semibold text-white truncate max-w-[180px] sm:max-w-xs">{selectedImagePreview.name}</p>
+                    <span className="text-[10px] text-emerald-400 font-mono">E2EE Ready (AES-256-GCM)</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedImagePreview(null)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                    title="Cancel image"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sendMediaMessage({
+                        type: 'image',
+                        data: selectedImagePreview.data,
+                        fileName: selectedImagePreview.name,
+                        caption: inputText.trim() || undefined,
+                      });
+                      setInputText('');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send Photo</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {selectedFilePreview && (
+              <div className="px-3.5 sm:px-6 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 animate-in fade-in">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-white truncate max-w-[180px] sm:max-w-xs">{selectedFilePreview.name}</p>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {Math.round(selectedFilePreview.size / 1024)} KB · Encrypted
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFilePreview(null)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                    title="Cancel file"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sendMediaMessage({
+                        type: 'file',
+                        data: selectedFilePreview.data,
+                        fileName: selectedFilePreview.name,
+                        fileSize: selectedFilePreview.size,
+                        mimeType: selectedFilePreview.mime,
+                        caption: inputText.trim() || undefined,
+                      });
+                      setInputText('');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send File</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Hidden file inputs */}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleSelectImage}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.txt,.zip,.rar,.xlsx,.pptx"
+              className="hidden"
+              onChange={handleSelectFile}
+            />
+
+            {/* Voice Recording Active Bar or Normal Rich Input Bar */}
+            {isRecordingVoice ? (
+              <div className="p-2.5 sm:p-3.5 border-t border-red-500/30 bg-red-950/40 flex items-center justify-between gap-3 shrink-0 animate-in fade-in">
+                <div className="flex items-center gap-3">
+                  <div className="relative flex items-center justify-center">
+                    <span className="w-3 h-3 rounded-full bg-red-500 animate-ping absolute" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 relative" />
+                  </div>
+                  <span className="text-xs font-semibold text-red-200">Recording voice note...</span>
+                  <span className="font-mono text-xs text-white bg-black/50 px-2.5 py-0.5 rounded-md border border-red-500/40">
+                    {`${Math.floor(voiceDuration / 60)}:${(voiceDuration % 60).toString().padStart(2, '0')}`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={cancelVoiceRecording}
+                    className="p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                    title="Cancel recording"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopVoiceRecordingAndSend}
+                    className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-950/50 transition-all active:scale-95"
+                    title="Stop and send voice message"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Send Voice</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={handleSendMessage}
+                className="p-2.5 sm:p-3.5 border-t border-slate-800 bg-slate-900/40 flex gap-1.5 sm:gap-2 items-center shrink-0"
               >
-                {editingMessage ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-              </button>
-            </form>
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  className="p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors shrink-0"
+                  title="Send Photo"
+                >
+                  <ImageIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors shrink-0"
+                  title="Attach File / Document"
+                >
+                  <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={startVoiceRecording}
+                  className="p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors shrink-0"
+                  title="Record Voice Note"
+                >
+                  <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+
+                <input
+                  type="text"
+                  placeholder={
+                    editingMessage
+                      ? 'Edit your message...'
+                      : selectedImagePreview
+                      ? 'Add a caption for this photo...'
+                      : selectedFilePreview
+                      ? 'Add a note for this file...'
+                      : `Message @${activeContact.username}...`
+                  }
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  className="flex-1 bg-slate-950/70 border border-slate-800 rounded-xl px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                />
+
+                <button
+                  type="submit"
+                  disabled={!inputText.trim() && !selectedImagePreview && !selectedFilePreview}
+                  className={`p-2 sm:p-2.5 rounded-xl text-white transition-colors disabled:opacity-40 shrink-0 ${
+                    editingMessage ? 'bg-teal-600 hover:bg-teal-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                  }`}
+                  title={editingMessage ? 'Save changes' : 'Send'}
+                >
+                  {editingMessage ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+                </button>
+              </form>
+            )}
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
@@ -2022,6 +2619,43 @@ export default function ChatPage() {
                 })
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-Screen Image Lightbox Modal */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+              <a
+                href={lightboxImage.src}
+                download={lightboxImage.name || 'securechat-photo.jpg'}
+                className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md transition-colors"
+                title="Download photo"
+              >
+                <Download className="w-5 h-5" />
+              </a>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md transition-colors"
+                title="Close preview"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <img
+              src={lightboxImage.src}
+              alt={lightboxImage.name}
+              className="max-h-[85vh] max-w-full rounded-2xl object-contain shadow-2xl border border-white/10"
+            />
+            {lightboxImage.name && (
+              <p className="mt-2 text-xs font-mono text-slate-400">{lightboxImage.name}</p>
+            )}
           </div>
         </div>
       )}

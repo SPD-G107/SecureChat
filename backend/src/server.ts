@@ -9,6 +9,7 @@ import { initDatabaseTables } from './config/database.js';
 const server = http.createServer(app);
 
 const io = new Server(server, {
+  maxHttpBufferSize: 25 * 1024 * 1024,
   cors: {
     origin: (origin, callback) => {
       callback(null, true);
