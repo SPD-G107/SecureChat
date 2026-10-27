@@ -2310,19 +2310,19 @@ export default function ChatPage() {
 
             {/* Media Attachment Previews */}
             {selectedImagePreview && (
-              <div className="px-3.5 sm:px-6 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 animate-in fade-in">
-                <div className="flex items-center gap-3">
+              <div className="px-3 sm:px-5 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2 animate-in fade-in min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <img
                     src={selectedImagePreview.data}
                     alt="Preview"
-                    className="w-12 h-12 rounded-lg object-cover border border-slate-700"
+                    className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover border border-slate-700 shrink-0"
                   />
-                  <div>
-                    <p className="text-xs font-semibold text-white truncate max-w-[180px] sm:max-w-xs">{selectedImagePreview.name}</p>
-                    <span className="text-[10px] text-emerald-400 font-mono">E2EE Ready (AES-256-GCM)</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-white truncate max-w-[130px] sm:max-w-xs">{selectedImagePreview.name}</p>
+                    <span className="text-[10px] text-emerald-400 font-mono">E2EE Ready (AES-256)</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => setSelectedImagePreview(null)}
@@ -2342,29 +2342,29 @@ export default function ChatPage() {
                       });
                       setInputText('');
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95"
+                    className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-md transition-all active:scale-95 shrink-0"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Send Photo</span>
+                    <span>Send</span>
                   </button>
                 </div>
               </div>
             )}
 
             {selectedFilePreview && (
-              <div className="px-3.5 sm:px-6 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 animate-in fade-in">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+              <div className="px-3 sm:px-5 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2 animate-in fade-in min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
                     <FileText className="w-5 h-5" />
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold text-white truncate max-w-[180px] sm:max-w-xs">{selectedFilePreview.name}</p>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-white truncate max-w-[130px] sm:max-w-xs">{selectedFilePreview.name}</p>
                     <span className="text-[10px] text-slate-400 font-mono">
                       {Math.round(selectedFilePreview.size / 1024)} KB · Encrypted
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => setSelectedFilePreview(null)}
@@ -2386,10 +2386,10 @@ export default function ChatPage() {
                       });
                       setInputText('');
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95"
+                    className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-md transition-all active:scale-95 shrink-0"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Send File</span>
+                    <span>Send</span>
                   </button>
                 </div>
               </div>
@@ -2413,22 +2413,22 @@ export default function ChatPage() {
 
             {/* Voice Recording Active Bar or Normal Rich Input Bar */}
             {isRecordingVoice ? (
-              <div className="p-2.5 sm:p-3.5 border-t border-red-500/30 bg-red-950/40 flex items-center justify-between gap-3 shrink-0 animate-in fade-in">
-                <div className="flex items-center gap-3">
-                  <div className="relative flex items-center justify-center">
-                    <span className="w-3 h-3 rounded-full bg-red-500 animate-ping absolute" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 relative" />
+              <div className="p-2 sm:p-3 border-t border-red-500/30 bg-red-950/40 flex items-center justify-between gap-2 shrink-0 animate-in fade-in w-full min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="relative flex items-center justify-center shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping absolute" />
+                    <span className="w-2 h-2 rounded-full bg-red-500 relative" />
                   </div>
-                  <span className="text-xs font-semibold text-red-200">Recording voice note...</span>
-                  <span className="font-mono text-xs text-white bg-black/50 px-2.5 py-0.5 rounded-md border border-red-500/40">
+                  <span className="text-xs font-semibold text-red-200 truncate">Recording...</span>
+                  <span className="font-mono text-xs text-white bg-black/50 px-2 py-0.5 rounded-md border border-red-500/40 shrink-0">
                     {`${Math.floor(voiceDuration / 60)}:${(voiceDuration % 60).toString().padStart(2, '0')}`}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={cancelVoiceRecording}
-                    className="p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                    className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors shrink-0"
                     title="Cancel recording"
                   >
                     <X className="w-4 h-4" />
@@ -2436,23 +2436,23 @@ export default function ChatPage() {
                   <button
                     type="button"
                     onClick={stopVoiceRecordingAndSend}
-                    className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-950/50 transition-all active:scale-95"
+                    className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1 shadow-lg shadow-red-950/50 transition-all active:scale-95 shrink-0"
                     title="Stop and send voice message"
                   >
-                    <Send className="w-4 h-4" />
-                    <span>Send Voice</span>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send</span>
                   </button>
                 </div>
               </div>
             ) : (
               <form
                 onSubmit={handleSendMessage}
-                className="p-2.5 sm:p-3.5 border-t border-slate-800 bg-slate-900/40 flex gap-1.5 sm:gap-2 items-center shrink-0"
+                className="p-1.5 sm:p-2.5 border-t border-slate-800 bg-slate-900/60 flex gap-1 sm:gap-1.5 items-center shrink-0 w-full max-w-full min-w-0 box-border"
               >
                 <button
                   type="button"
                   onClick={() => imageInputRef.current?.click()}
-                  className="p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors shrink-0"
+                  className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors shrink-0"
                   title="Send Photo"
                 >
                   <ImageIcon className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -2460,7 +2460,7 @@ export default function ChatPage() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors shrink-0"
+                  className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors shrink-0"
                   title="Attach File / Document"
                 >
                   <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -2468,7 +2468,7 @@ export default function ChatPage() {
                 <button
                   type="button"
                   onClick={startVoiceRecording}
-                  className="p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors shrink-0"
+                  className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition-colors shrink-0"
                   title="Record Voice Note"
                 >
                   <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -2480,20 +2480,20 @@ export default function ChatPage() {
                     editingMessage
                       ? 'Edit your message...'
                       : selectedImagePreview
-                      ? 'Add a caption for this photo...'
+                      ? 'Add a caption...'
                       : selectedFilePreview
-                      ? 'Add a note for this file...'
+                      ? 'Add a note...'
                       : `Message @${activeContact.username}...`
                   }
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  className="flex-1 bg-slate-950/70 border border-slate-800 rounded-xl px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                  className="flex-1 min-w-0 bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
                 />
 
                 <button
                   type="submit"
                   disabled={!inputText.trim() && !selectedImagePreview && !selectedFilePreview}
-                  className={`p-2 sm:p-2.5 rounded-xl text-white transition-colors disabled:opacity-40 shrink-0 ${
+                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl text-white transition-all disabled:opacity-40 shrink-0 flex items-center justify-center ${
                     editingMessage ? 'bg-teal-600 hover:bg-teal-500' : 'bg-emerald-600 hover:bg-emerald-500'
                   }`}
                   title={editingMessage ? 'Save changes' : 'Send'}
