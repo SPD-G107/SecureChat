@@ -64,6 +64,26 @@ services:
     networks:
       - securechat-network
 
+  coturn:
+    image: coturn/coturn:latest
+    container_name: securechat-coturn
+    restart: always
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49152-49160:49152-49160/udp"
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --fingerprint
+      - --lt-cred-mech
+      - --realm=3-16-212-72.sslip.io
+      - --user=securechat:securechat_turn_2026
+      - --external-ip=3.16.212.72
+    networks:
+      - securechat-network
+
 volumes:
   mysqldata:
 
