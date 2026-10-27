@@ -206,7 +206,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="flex-1 max-w-2xl mx-auto w-full p-4 sm:p-6 py-8 sm:py-10">
+    <div className="flex-1 max-w-2xl mx-auto w-full p-3.5 sm:p-6 py-6 sm:py-10 overflow-x-hidden min-w-0 box-border">
       <div className="mb-6 sm:mb-8">
         <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
           <span>User Account & Profile</span>
@@ -231,7 +231,7 @@ export default function ProfilePage() {
         </div>
       )}
 
-      <div className="bg-slate-900/90 border border-emerald-950/60 rounded-3xl p-5 sm:p-7 shadow-2xl backdrop-blur-md space-y-6">
+      <div className="bg-slate-900/90 border border-emerald-950/60 rounded-3xl p-4 sm:p-7 shadow-2xl backdrop-blur-md space-y-6 w-full max-w-full overflow-hidden box-border">
         {/* Profile Avatar & Header */}
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6 pb-6 border-b border-slate-800 text-center sm:text-left">
           {/* Avatar with Camera Trigger */}
@@ -295,7 +295,7 @@ export default function ProfilePage() {
             <p className="text-xs text-slate-400 mt-0.5">{user?.displayName || 'Standard User'}</p>
 
             {/* Action buttons for Avatar */}
-            <div className="flex items-center gap-2 mt-3 justify-center sm:justify-start">
+            <div className="flex flex-wrap items-center gap-2 mt-3 justify-center sm:justify-start">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -322,22 +322,22 @@ export default function ProfilePage() {
         </div>
 
         {/* Edit Display Name Form */}
-        <form onSubmit={handleSaveDisplayName} className="space-y-3 pb-6 border-b border-slate-800">
+        <form onSubmit={handleSaveDisplayName} className="space-y-3 pb-6 border-b border-slate-800 w-full max-w-full min-w-0">
           <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider text-[11px]">
             Display Name
           </label>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 w-full max-w-full min-w-0">
             <input
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="e.g. Seng Koemnan"
-              className="flex-1 bg-slate-950/70 border border-slate-800 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
+              className="flex-1 min-w-0 bg-slate-950/70 border border-slate-800 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
             />
             <button
               type="submit"
               disabled={savingProfile || displayName.trim() === (user?.displayName || '')}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0 shadow-sm"
             >
               {savingProfile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
               <span>Save</span>
