@@ -268,8 +268,9 @@ export default function ChatPage() {
         video: video
           ? {
               facingMode: facing,
-              width: { ideal: 1280, max: 1920 },
-              height: { ideal: 720, max: 1080 },
+              width: { ideal: 720, max: 1080 },
+              height: { ideal: 1280, max: 1920 },
+              aspectRatio: { ideal: 9 / 16 },
             }
           : false,
       });
@@ -277,7 +278,12 @@ export default function ChatPage() {
       console.warn('[WebRTC] Fallback to standard media constraints:', e);
       return await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: video ? true : false,
+        video: video
+          ? {
+              facingMode: facing,
+              aspectRatio: { ideal: 9 / 16 },
+            }
+          : false,
       });
     }
   };
@@ -319,27 +325,40 @@ export default function ChatPage() {
     // Receive remote media tracks directly from the browser's native WebRTC stream
     pc.ontrack = (event) => {
       console.log('[WebRTC] Received remote track:', event.track.kind, event.track.id);
-      event.track.onunmute = () => {
-        console.log('[WebRTC] Remote track unmuted:', event.track.kind);
+
+      const syncRemoteTracks = () => {
+        if (event.streams && event.streams[0]) {
+          const fresh = new MediaStream(event.streams[0].getTracks());
+          remoteMediaStreamRef.current = fresh;
+          setRemoteStream(fresh);
+        } else {
+          if (!remoteMediaStreamRef.current) {
+            remoteMediaStreamRef.current = new MediaStream();
+          }
+          const cur = remoteMediaStreamRef.current;
+          const existing = cur.getTracks().find((t) => t.kind === event.track.kind);
+          if (existing) {
+            cur.removeTrack(existing);
+          }
+          cur.addTrack(event.track);
+          const fresh = new MediaStream(cur.getTracks());
+          remoteMediaStreamRef.current = fresh;
+          setRemoteStream(fresh);
+        }
         setStreamVersion((v) => v + 1);
       };
 
-      if (event.streams && event.streams[0]) {
-        remoteMediaStreamRef.current = event.streams[0];
-        setRemoteStream(event.streams[0]);
-      } else {
-        if (!remoteMediaStreamRef.current) {
-          remoteMediaStreamRef.current = new MediaStream();
-        }
-        const cur = remoteMediaStreamRef.current;
-        const existing = cur.getTracks().find((t) => t.kind === event.track.kind);
-        if (existing) {
-          cur.removeTrack(existing);
-        }
-        cur.addTrack(event.track);
-        setRemoteStream(cur);
-      }
-      setStreamVersion((v) => v + 1);
+      event.track.onunmute = () => {
+        console.log('[WebRTC] Remote track unmuted:', event.track.kind);
+        syncRemoteTracks();
+      };
+
+      event.track.onmute = () => {
+        console.log('[WebRTC] Remote track muted:', event.track.kind);
+        setStreamVersion((v) => v + 1);
+      };
+
+      syncRemoteTracks();
     };
 
     pc.oniceconnectionstatechange = () => {
@@ -454,7 +473,12 @@ export default function ChatPage() {
     const nextFacing = facingMode === 'user' ? 'environment' : 'user';
     try {
       const newStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: nextFacing, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          facingMode: nextFacing,
+          width: { ideal: 720, max: 1080 },
+          height: { ideal: 1280, max: 1920 },
+          aspectRatio: { ideal: 9 / 16 },
+        },
       });
       const newVideoTrack = newStream.getVideoTracks()[0];
       const oldVideoTrack = localStreamRef.current.getVideoTracks()[0];
