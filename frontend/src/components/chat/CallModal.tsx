@@ -61,14 +61,36 @@ export default function CallModal({
   const [duration, setDuration] = useState(0);
   const [isSwapped, setIsSwapped] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [remoteVideoActive, setRemoteVideoActive] = useState(false);
 
-  // Reset swap view when call ends
+  // Reset swap view and active video state when call ends
   useEffect(() => {
     if (callState === 'idle') {
       setIsSwapped(false);
       setAudioBlocked(false);
+      setRemoteVideoActive(false);
     }
   }, [callState]);
+
+  // Periodic watchdog to ensure video play doesn't stall on mobile browsers
+  useEffect(() => {
+    if (callState === 'connected' && isVideo) {
+      const interval = setInterval(() => {
+        if (mainVideoRef.current) {
+          if (mainVideoRef.current.paused) {
+            mainVideoRef.current.play().catch(() => {});
+          }
+          if (mainVideoRef.current.videoWidth > 0 && !isSwapped) {
+            setRemoteVideoActive(true);
+          }
+        }
+        if (pipVideoRef.current && pipVideoRef.current.paused) {
+          pipVideoRef.current.play().catch(() => {});
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [callState, isVideo, isSwapped]);
 
   // Bind remote audio stream to dedicated HTML5 audio element
   useEffect(() => {
@@ -144,6 +166,12 @@ export default function CallModal({
     remoteStream &&
     remoteStream.getVideoTracks().length > 0 &&
     remoteStream.getVideoTracks().some((t) => t.enabled)
+  );
+
+  const isRemoteVideoPlaying = Boolean(
+    hasRemoteVideo ||
+    remoteVideoActive ||
+    (remoteStream && remoteStream.getVideoTracks().length > 0)
   );
 
   const hasLocalVideo = Boolean(
@@ -305,12 +333,28 @@ export default function CallModal({
                 autoPlay
                 playsInline
                 muted
+                onPlaying={() => {
+                  if (!isSwapped) setRemoteVideoActive(true);
+                }}
+                onLoadedMetadata={(e) => {
+                  const el = e.target as HTMLVideoElement;
+                  el.play().catch(() => {});
+                  if (!isSwapped) setRemoteVideoActive(true);
+                }}
                 className="w-full h-full object-cover bg-black"
               />
 
               {/* Placeholder when primary video stream has no active track */}
-              {((!isSwapped && !hasRemoteVideo) || (isSwapped && !hasLocalVideo)) && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 text-center space-y-4 p-6 z-10">
+              {((!isSwapped && !isRemoteVideoPlaying) || (isSwapped && !hasLocalVideo)) && (
+                <div
+                  onClick={() => {
+                    if (mainVideoRef.current) {
+                      mainVideoRef.current.play().catch(() => {});
+                    }
+                  }}
+                  className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 text-center space-y-4 p-6 z-10 cursor-pointer"
+                  title="Click to force video playback"
+                >
                   <div className="relative">
                     <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden bg-slate-800 border-4 border-emerald-500/80 shadow-2xl flex items-center justify-center text-3xl font-bold text-white">
                       {!isSwapped && peer.avatarUrl ? (
@@ -331,17 +375,17 @@ export default function CallModal({
                       {callState === 'calling'
                         ? 'Ringing...'
                         : !isSwapped
-                        ? 'Connecting secure video feed...'
+                        ? 'Connecting secure video feed... (Tap to retry)'
                         : 'Camera is currently off'}
                     </p>
                   </div>
                 </div>
               )}
 
-              {/* Picture-in-Picture Floating Window (Click to swap views) */}
+              {/* Picture-in-Picture Floating Window (Portrait 9:16 layout) */}
               <div
                 onClick={() => setIsSwapped((prev) => !prev)}
-                className="absolute bottom-24 right-4 sm:bottom-24 sm:right-6 w-32 sm:w-48 aspect-video rounded-xl sm:rounded-2xl overflow-hidden border-2 border-emerald-500/80 shadow-2xl bg-slate-900 z-20 transition-transform hover:scale-105 active:scale-95 cursor-pointer group"
+                className="absolute bottom-24 right-4 sm:bottom-24 sm:right-6 w-24 sm:w-32 aspect-[9/16] rounded-2xl overflow-hidden border-2 border-emerald-500/80 shadow-2xl bg-slate-900 z-20 transition-transform hover:scale-105 active:scale-95 cursor-pointer group"
                 title="Click to swap views"
               >
                 <video
@@ -349,6 +393,10 @@ export default function CallModal({
                   autoPlay
                   playsInline
                   muted
+                  onLoadedMetadata={(e) => {
+                    const el = e.target as HTMLVideoElement;
+                    el.play().catch(() => {});
+                  }}
                   className="w-full h-full object-cover bg-black"
                 />
 
