@@ -2,6 +2,7 @@ import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
 import { UserRepository } from '../repositories/user.repository.js';
 import { AuditRepository } from '../repositories/audit.repository.js';
+import { query } from '../config/database.js';
 import { ENV } from '../config/env.js';
 import { AuthTokenPayload } from '../types/index.js';
 import { logger } from '../utils/logger.js';
@@ -87,19 +88,7 @@ export class AuthService {
       throw new Error('Account has been suspended');
     }
 
-    let isValid = await argon2.verify(user.password_hash, password);
-    // Seamless fallback for pre-seeded demo accounts (supporting both README and seed passwords)
-    if (!isValid) {
-      if (user.username === 'admin' && (password === 'AdminSecurePass2026!' || password === 'AdminPass123!')) {
-        isValid = true;
-      } else if (user.username === 'alice' && (password === 'AliceSecurePass2026!' || password === 'Password123!')) {
-        isValid = true;
-      } else if (user.username === 'bob' && (password === 'BobSecurePass2026!' || password === 'Password123!')) {
-        isValid = true;
-      } else if (user.username === 'charlie' && (password === 'CharlieSecurePass2026!' || password === 'Password123!')) {
-        isValid = true;
-      }
-    }
+    const isValid = await argon2.verify(user.password_hash, password);
 
     if (!isValid) {
       logger.warn(`Failed login attempt for username: ${username}`);
@@ -139,5 +128,43 @@ export class AuthService {
 
   static generateToken(payload: AuthTokenPayload): string {
     return jwt.sign(payload, ENV.JWT_SECRET, { expiresIn: (ENV.JWT_EXPIRES_IN || '7d') as any });
+  }
+
+  /**
+   * Securely provision or update the administrator account dynamically from private .env.
+   * Completely avoids storing or committing administrator credentials to Git repository.
+   */
+  static async initAdminFromEnv(): Promise<void> {
+    const adminUser = ENV.ADMIN_USERNAME?.trim();
+    const adminPass = ENV.ADMIN_PASSWORD?.trim();
+
+    if (!adminUser || !adminPass) {
+      return;
+    }
+
+    try {
+      const existing = await UserRepository.findByUsername(adminUser);
+      const passwordHash = await argon2.hash(adminPass, {
+        type: argon2.argon2id,
+        memoryCost: 2 ** 16, // 64 MB
+        timeCost: 3,
+        parallelism: 1,
+      });
+
+      if (!existing) {
+        const id = 'u-admin';
+        await query(
+          'INSERT INTO users (id, username, password_hash, display_name, role, status) VALUES (?, ?, ?, ?, ?, ?)',
+          [id, adminUser, passwordHash, 'System Administrator', 'admin', 'active']
+        );
+        logger.info(`Administrator account @${adminUser} securely initialized from environment`);
+      } else if (existing.role === 'admin') {
+        // Synchronize password hash securely from private environment
+        await query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, existing.id]);
+        logger.info(`Administrator account @${adminUser} credentials synchronized from environment`);
+      }
+    } catch (err: any) {
+      logger.warn(`Failed to provision admin account: ${err.message}`);
+    }
   }
 }

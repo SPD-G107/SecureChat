@@ -5,6 +5,7 @@ import { ENV } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { setupChatSockets } from './sockets/chat.socket.js';
 import { initDatabaseTables } from './config/database.js';
+import { AuthService } from './services/auth.service.js';
 
 const server = http.createServer(app);
 
@@ -22,8 +23,10 @@ const io = new Server(server, {
 setupChatSockets(io);
 app.set('io', io);
 
-// Initialize missing database tables if not existing
-initDatabaseTables().catch(() => {});
+// Initialize missing database tables & secure admin account if configured
+initDatabaseTables()
+  .then(() => AuthService.initAdminFromEnv())
+  .catch(() => {});
 
 server.listen(ENV.PORT, () => {
   logger.info(`SecureChat Backend running on port ${ENV.PORT} [${ENV.NODE_ENV}]`);

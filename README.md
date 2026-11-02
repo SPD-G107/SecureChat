@@ -650,16 +650,11 @@ To launch the entire isolated stack with zero external dependencies:
 docker compose up --build
 ```
 
-### 16.6 Default Pre-Seeded Accounts for Testing
+### 16.6 User & Administrator Account Management
 
-| Username | Passphrase | Role | Description |
-| :--- | :--- | :--- | :--- |
-| **admin** | `AdminSecurePass2026!` | `admin` | System Administrator (Full Audit Logs & Account Status Toggle) |
-| **alice** | `AliceSecurePass2026!` | `user` | Project Lead (Pre-seeded E2EE Identity) |
-| **bob** | `BobSecurePass2026!` | `user` | Standard User (Key Rotation Demo) |
-| **charlie** | `CharlieSecurePass2026!` | `user` | Standard User |
-
-*New accounts can be registered anytime at `http://localhost:3000/register` with on-device cryptographic key generation.*
+- **Zero Plaintext Credentials in Git**: All accounts in SecureChat use Argon2id memory-hard password hashing. Zero plaintext passwords, secrets, or personal emails are committed to Git.
+- **Testing User Accounts**: Register any new test account directly at http://localhost:3000/register (or on your live domain) with on-device cryptographic key generation and anti-bot verification.
+- **System Administrator Account**: Provisioned dynamically via private environment variables (ADMIN_USERNAME and ADMIN_PASSWORD in private .env) without exposing administrative credentials in source code.
 
 ### 16.7 Signal / Telegram Inbox Flow
 1. **Zero-Pollution Inbox for New Accounts**:

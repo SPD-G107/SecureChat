@@ -307,7 +307,7 @@ export default function RegisterPage() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="alice"
+                placeholder="Choose a username"
                 className={`w-full bg-slate-950/70 border rounded-2xl pl-11 pr-4 py-2.5 sm:py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none transition-all shadow-inner ${
                   usernameError
                     ? 'border-red-500/60 focus:border-red-500 focus:ring-1 focus:ring-red-500/30'
@@ -331,7 +331,7 @@ export default function RegisterPage() {
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Alice Wonderland"
+              placeholder="e.g. Alex"
               className="w-full bg-slate-950/70 border border-slate-800 rounded-2xl px-4 py-2.5 sm:py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all shadow-inner"
             />
           </div>

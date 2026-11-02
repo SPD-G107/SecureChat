@@ -1,8 +1,7 @@
 -- SecureChat Database Seed Data
 -- Authors: REAM RITHY & SENG KOEMNAN (Group 7)
 -- All passwords hashed with authentic Argon2id (m=65536, t=3, p=4)
--- Passwords for alice, bob, charlie: "AliceSecurePass2026!" / "BobSecurePass2026!" / "CharlieSecurePass2026!" (or "Password123!")
--- Password for admin: "AdminSecurePass2026!" (or "AdminPass123!")
+-- Passwords are encrypted with Argon2id; zero plaintext credentials stored in source control.
 
 USE securechat;
 

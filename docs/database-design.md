@@ -163,9 +163,9 @@ npm run db:seed
 ```
 
 ### Default Seed Accounts:
-| Username | Password | Role | E2EE Key Version |
+| Username | Role | E2EE Key Version | Authentication |
 |---|---|---|---|
-| `alice` | `Password123!` | user (Project Lead) | v1 |
-| `bob` | `Password123!` | user | v2 (Rotated) |
-| `charlie` | `Password123!` | user | v1 |
-| `admin` | `AdminPass123!` | admin | v1 |
+| `alice` | user (Project Lead) | v1 | Argon2id Hash |
+| `bob` | user | v2 (Rotated) | Argon2id Hash |
+| `charlie` | user | v1 | Argon2id Hash |
+| `admin` | admin | v1 | Argon2id Hash (Provisioned via `.env`) |

@@ -188,7 +188,7 @@ export default function VerifyKeyPage() {
             <Search className="w-4 h-4 text-emerald-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search contact username (e.g. nan, lang, alice, bob)"
+              placeholder="Search contact username..."
               value={searchUsername}
               onChange={(e) => setSearchUsername(e.target.value)}
               className="w-full bg-slate-950/70 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 transition-colors"
