@@ -512,9 +512,6 @@ export default function RegisterPage() {
                 )}
               </div>
             </div>
-            <p className="text-[10px] text-slate-500 font-mono">
-              Solve the random calculation to prove you are human (Anti-Bot Protection).
-            </p>
           </div>
 
           {/* Zero-Knowledge Cryptographic Notice */}
