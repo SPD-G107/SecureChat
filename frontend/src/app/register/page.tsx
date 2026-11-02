@@ -514,17 +514,6 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {/* Zero-Knowledge Cryptographic Notice */}
-          <div className="p-3 rounded-2xl bg-emerald-950/30 border border-emerald-800/40 text-emerald-300/90 text-[11px] space-y-1 leading-relaxed">
-            <div className="flex items-center gap-1.5 font-semibold text-emerald-300">
-              <Shield className="w-3.5 h-3.5" />
-              <span>Zero-Knowledge Cryptographic Security</span>
-            </div>
-            <p className="text-slate-400 text-[10px]">
-              Your ECDH P-256 private key is generated directly in your browser. Passphrase is authenticated using memory-hard Argon2id. Zero server plaintext.
-            </p>
-          </div>
-
           {/* Submit Button */}
           <button
             type="submit"
