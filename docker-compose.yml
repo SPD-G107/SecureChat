@@ -37,6 +37,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-securechat_pass_2026}
       DB_NAME: ${DB_NAME:-securechat}
       JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_2026}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       CORS_ORIGIN: http://localhost:3000
     ports:
       - "5000:5000"

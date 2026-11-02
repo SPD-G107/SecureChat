@@ -138,6 +138,6 @@ export class AuthService {
   }
 
   static generateToken(payload: AuthTokenPayload): string {
-    return jwt.sign(payload, ENV.JWT_SECRET, { expiresIn: (ENV.JWT_EXPIRES_IN || '24h') as any });
+    return jwt.sign(payload, ENV.JWT_SECRET, { expiresIn: (ENV.JWT_EXPIRES_IN || '7d') as any });
   }
 }
