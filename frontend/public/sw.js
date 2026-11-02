@@ -1,7 +1,7 @@
 // SecureChat Service Worker (PWA Offline Shell & Installability Support)
 // 100% Local / Zero Cloud APIs or CDNs
 
-const CACHE_NAME = 'securechat-cache-v1';
+const CACHE_NAME = 'securechat-cache-v2';
 const CORE_ASSETS = [
   '/',
   '/chat',
@@ -13,6 +13,8 @@ const CORE_ASSETS = [
   '/logo.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+  '/icons/icon-maskable-192.png',
+  '/icons/icon-maskable-512.png',
 ];
 
 self.addEventListener('install', (event) => {
