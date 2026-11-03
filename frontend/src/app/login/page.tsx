@@ -91,9 +91,6 @@ export default function LoginPage() {
             <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-400 border-2 border-slate-900" />
           </div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">Sign In to SecureChat</h1>
-          <p className="text-xs text-slate-400 mt-1 font-medium">
-            Session protected by Argon2id password verification
-          </p>
         </div>
 
         {error && (
