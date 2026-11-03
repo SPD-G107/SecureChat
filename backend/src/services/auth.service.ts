@@ -143,7 +143,6 @@ export class AuthService {
     }
 
     try {
-      const existing = await UserRepository.findByUsername(adminUser);
       const passwordHash = await argon2.hash(adminPass, {
         type: argon2.argon2id,
         memoryCost: 2 ** 16, // 64 MB
@@ -151,18 +150,41 @@ export class AuthService {
         parallelism: 1,
       });
 
-      if (!existing) {
-        const id = 'u-admin';
+      // 1. Check if the exact admin username already exists
+      const existingUser = await UserRepository.findByUsername(adminUser);
+      if (existingUser) {
         await query(
-          'INSERT INTO users (id, username, password_hash, display_name, role, status) VALUES (?, ?, ?, ?, ?, ?)',
-          [id, adminUser, passwordHash, 'System Administrator', 'admin', 'active']
+          'UPDATE users SET password_hash = ?, role = "admin", status = "active" WHERE id = ?',
+          [passwordHash, existingUser.id]
         );
-        logger.info(`Administrator account @${adminUser} securely initialized from environment`);
-      } else if (existing.role === 'admin') {
-        // Synchronize password hash securely from private environment
-        await query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, existing.id]);
-        logger.info(`Administrator account @${adminUser} credentials synchronized from environment`);
+        logger.info(`Administrator account @${adminUser} synchronized from environment`);
+        return;
       }
+
+      // 2. If username changed, check if an existing admin record (by role or id 'u-admin') exists to update in-place
+      const adminRows = (await query(
+        'SELECT id, username FROM users WHERE role = "admin" OR id = "u-admin" LIMIT 1'
+      )) as any[];
+
+      if (adminRows.length > 0) {
+        const adminRecord = adminRows[0];
+        await query(
+          'UPDATE users SET username = ?, password_hash = ?, role = "admin", status = "active" WHERE id = ?',
+          [adminUser, passwordHash, adminRecord.id]
+        );
+        logger.info(
+          `Administrator account renamed from @${adminRecord.username} to @${adminUser} and credentials synchronized from environment`
+        );
+        return;
+      }
+
+      // 3. Otherwise create fresh admin user
+      const id = 'u-admin';
+      await query(
+        'INSERT INTO users (id, username, password_hash, display_name, role, status) VALUES (?, ?, ?, ?, "admin", "active")',
+        [id, adminUser, passwordHash, 'System Administrator']
+      );
+      logger.info(`Administrator account @${adminUser} securely initialized from environment`);
     } catch (err: any) {
       logger.warn(`Failed to provision admin account: ${err.message}`);
     }
