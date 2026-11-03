@@ -39,7 +39,7 @@ router.patch('/:conversationId/read', async (req: AuthenticatedRequest, res: Res
 router.patch('/:messageId', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { messageId } = req.params;
-    const { encryptedPayload, iv, macTag, plaintext } = req.body;
+    const { encryptedPayload, iv, macTag } = req.body;
 
     if (!encryptedPayload || !iv || !macTag) {
       res.status(400).json({ error: 'Encrypted payload, IV, and macTag are required' });
@@ -65,7 +65,6 @@ router.patch('/:messageId', async (req: AuthenticatedRequest, res: Response): Pr
         messageId: updated.id,
         conversationId: updated.conversation_id,
         senderId: updated.sender_id,
-        plaintext: plaintext || '',
         encryptedPayload: updated.encrypted_payload,
         iv: updated.initialization_vector,
         macTag: updated.mac_tag,

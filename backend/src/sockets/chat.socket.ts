@@ -74,14 +74,13 @@ export const setupChatSockets = (io: Server) => {
       clientTempId?: string;
       conversationId?: string;
       recipientId: string;
-      plaintext?: string;
       encryptedPayload: string;
       iv: string;
       macTag: string;
       ephemeralPublicKey?: string;
     }) => {
       try {
-        const { recipientId, encryptedPayload, iv, macTag, ephemeralPublicKey, plaintext, clientTempId } = data;
+        const { recipientId, encryptedPayload, iv, macTag, ephemeralPublicKey, clientTempId } = data;
         let targetConvId = data.conversationId;
 
         // Verify or auto-create conversation between sender and recipient
@@ -109,15 +108,15 @@ export const setupChatSockets = (io: Server) => {
 
         logger.info(`E2EE Ciphertext relayed from ${socket.user?.username} (${userId}) to ${recipientId} [Status: ${initialStatus}]`);
 
-        // Relay to recipient's personal room with normalized fields
+        // Relay pure ciphertext to recipient's personal room with normalized fields (100% Zero plaintext)
         io.to(`user:${recipientId}`).emit('message:received', {
           id: saved.id,
           conversationId: saved.conversation_id,
           conversation_id: saved.conversation_id,
           senderId: userId,
           sender_id: userId,
+          sender_username: socket.user?.username,
           recipientId,
-          plaintext: plaintext || '',
           encryptedPayload: saved.encrypted_payload,
           encrypted_payload: saved.encrypted_payload,
           iv: saved.initialization_vector,

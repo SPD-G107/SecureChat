@@ -660,30 +660,75 @@ export default function ChatPage() {
       socket.on('message:received', async (incoming: any) => {
         if (!incoming) return;
         const senderId = incoming.senderId || incoming.sender_id;
-        let textContent = incoming.plaintext || incoming.text;
+        let textContent: string | null = incoming.text || null;
 
         if (!textContent && incoming.encryptedPayload && incoming.iv && incoming.macTag) {
           try {
             const convId = incoming.conversationId || incoming.conversation_id || `conv-${senderId}`;
-            const enc = new TextEncoder();
-            const hashBuffer = await window.crypto.subtle.digest(
-              'SHA-256',
-              enc.encode(`SecureChat_Pairwise_Key_v1_${convId}`)
-            );
-            const fallbackKey = await window.crypto.subtle.importKey(
-              'raw',
-              hashBuffer,
-              { name: 'AES-GCM', length: 256 },
-              false,
-              ['decrypt']
-            );
-            textContent = await CryptoEngine.decrypt(
-              incoming.encryptedPayload,
-              incoming.iv,
-              incoming.macTag,
-              fallbackKey
-            );
-          } catch {}
+
+            // 1. Try ECDH key derivation if peer contact exists
+            let sharedKey: CryptoKey | null = null;
+            if (currentUser) {
+              const peerContact =
+                directoryUsers.find((u) => u.id === senderId) ||
+                (activeContactRef.current?.id === senderId ? activeContactRef.current : null) ||
+                conversations.find((c) => c.peer_id === senderId)?.contact ||
+                ({ id: senderId, username: incoming.sender_username || senderId } as Contact);
+
+              if (peerContact) {
+                try {
+                  sharedKey = await getSharedKey(currentUser, peerContact, convId);
+                } catch {}
+              }
+            }
+
+            if (sharedKey) {
+              try {
+                textContent = await CryptoEngine.decrypt(
+                  incoming.encryptedPayload,
+                  incoming.iv,
+                  incoming.macTag,
+                  sharedKey
+                );
+              } catch {}
+            }
+
+            // 2. Pairwise conversation fallback key
+            if (!textContent) {
+              try {
+                const enc = new TextEncoder();
+                const hashBuffer = await window.crypto.subtle.digest(
+                  'SHA-256',
+                  enc.encode(`SecureChat_Pairwise_Key_v1_${convId}`)
+                );
+                const fallbackKey = await window.crypto.subtle.importKey(
+                  'raw',
+                  hashBuffer,
+                  { name: 'AES-GCM', length: 256 },
+                  false,
+                  ['decrypt']
+                );
+                textContent = await CryptoEngine.decrypt(
+                  incoming.encryptedPayload,
+                  incoming.iv,
+                  incoming.macTag,
+                  fallbackKey
+                );
+              } catch {}
+            }
+
+            // 3. Fallback attempt: if base64 encoded URL
+            if (!textContent) {
+              try {
+                const decoded = decodeURIComponent(atob(incoming.encryptedPayload));
+                if (decoded && !decoded.includes('\ufffd') && decoded.length > 0) {
+                  textContent = decoded;
+                }
+              } catch {}
+            }
+          } catch (err) {
+            console.warn('Real-time decryption error:', err);
+          }
         }
 
         if (!textContent) {
@@ -798,8 +843,33 @@ export default function ChatPage() {
       });
 
       // 7. Real-time message edited
-      socket.on('message:edited', (data: any) => {
+      socket.on('message:edited', async (data: any) => {
         if (!data || !data.messageId) return;
+        let decryptedText: string | null = null;
+        if (data.encryptedPayload && data.iv && data.macTag) {
+          try {
+            const convId = data.conversationId || `conv-${data.senderId}`;
+            const enc = new TextEncoder();
+            const hashBuffer = await window.crypto.subtle.digest(
+              'SHA-256',
+              enc.encode(`SecureChat_Pairwise_Key_v1_${convId}`)
+            );
+            const fallbackKey = await window.crypto.subtle.importKey(
+              'raw',
+              hashBuffer,
+              { name: 'AES-GCM', length: 256 },
+              false,
+              ['decrypt']
+            );
+            decryptedText = await CryptoEngine.decrypt(
+              data.encryptedPayload,
+              data.iv,
+              data.macTag,
+              fallbackKey
+            );
+          } catch {}
+        }
+
         setMessagesMap((prev) => {
           const updated = { ...prev };
           let changed = false;
@@ -810,7 +880,7 @@ export default function ChatPage() {
                 changed = true;
                 return {
                   ...m,
-                  text: data.plaintext || m.text,
+                  text: decryptedText || m.text,
                   encryptedPreview: data.encryptedPayload || m.encryptedPreview,
                   iv: data.iv || m.iv,
                   macTag: data.macTag || m.macTag,
@@ -1803,7 +1873,6 @@ export default function ChatPage() {
         clientTempId: tempId,
         conversationId: convId,
         recipientId: activeContact.id,
-        plaintext: mediaString,
         encryptedPayload: cipherBase64,
         iv: ivBase64,
         macTag: macTagBase64,
@@ -2023,7 +2092,6 @@ export default function ChatPage() {
           encryptedPayload: cipherBase64,
           iv: ivBase64,
           macTag: macTagBase64,
-          plaintext: textToSend,
         });
 
         setMessagesMap((prev) => {
@@ -2122,7 +2190,6 @@ export default function ChatPage() {
         clientTempId: tempId,
         conversationId: convId,
         recipientId: activeContact.id,
-        plaintext: textToSend,
         encryptedPayload: cipherBase64,
         iv: ivBase64,
         macTag: macTagBase64,
