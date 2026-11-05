@@ -100,21 +100,55 @@ export default function AdminDashboardPage() {
           </div>
         ) : (
           <div className="divide-y divide-slate-800/80">
-            {auditLogs.slice(0, 15).map((log) => (
-              <div key={log.id} className="px-6 py-3.5 flex items-center justify-between hover:bg-slate-800/30 transition-colors text-xs">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="font-mono text-emerald-300 font-semibold">{log.action}</span>
-                    <span className="text-slate-400 text-[11px] ml-2">User: {log.user_id || 'System'}</span>
+            {auditLogs.slice(0, 25).map((log) => {
+              let parsedDetails: any = null;
+              if (log.details) {
+                try {
+                  parsedDetails = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+                } catch {}
+              }
+              const displayUsername =
+                log.username ||
+                parsedDetails?.username ||
+                parsedDetails?.attemptedUsername ||
+                parsedDetails?.deletedUsername ||
+                null;
+
+              return (
+                <div key={log.id} className="px-6 py-3.5 flex items-center justify-between hover:bg-slate-800/30 transition-colors text-xs gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-emerald-300 font-semibold">{log.action}</span>
+                        <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-cyan-300 font-mono text-[11px] font-semibold">
+                          {displayUsername ? `@${displayUsername}` : `ID: ${log.user_id || 'System'}`}
+                        </span>
+                        {parsedDetails?.version && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono text-[10px]">
+                            v{parsedDetails.version}
+                          </span>
+                        )}
+                        {parsedDetails?.newStatus && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 font-mono text-[10px]">
+                            status → {parsedDetails.newStatus}
+                          </span>
+                        )}
+                      </div>
+                      {log.user_id && displayUsername && (
+                        <div className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">
+                          UUID: {log.user_id}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right text-[11px] text-slate-400 font-mono shrink-0">
+                    <div>{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
+                    <div className="text-[10px] text-slate-400">{log.ip_address || '127.0.0.1'}</div>
                   </div>
                 </div>
-                <div className="text-right text-[11px] text-slate-400 font-mono">
-                  <div>{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
-                  <div className="text-[10px] text-slate-400">{log.ip_address || '127.0.0.1'}</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

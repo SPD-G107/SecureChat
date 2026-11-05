@@ -17,6 +17,8 @@ export class AuthService {
     publicKey: string;
     fingerprint: string;
     displayName?: string;
+    ipAddress?: string;
+    userAgent?: string;
   }) {
     const existing = await UserRepository.findByUsername(data.username);
     if (existing) {
@@ -46,6 +48,8 @@ export class AuthService {
     await AuditRepository.logEvent({
       userId: user.id,
       action: 'USER_REGISTERED',
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
       details: { username: user.username },
     });
 
@@ -69,7 +73,7 @@ export class AuthService {
   /**
    * Authenticates user credentials via Argon2id verification with resilient administrator recovery
    */
-  static async login(username: string, password: string) {
+  static async login(username: string, password: string, ipAddress?: string, userAgent?: string) {
     const cleanUsername = username?.trim() || '';
     let user = await UserRepository.findByUsername(cleanUsername);
 
@@ -111,6 +115,8 @@ export class AuthService {
     if (!user) {
       await AuditRepository.logEvent({
         action: 'USER_LOGIN_FAILED',
+        ipAddress,
+        userAgent,
         details: { attemptedUsername: cleanUsername },
       });
       throw new Error('Invalid username or password');
@@ -120,7 +126,9 @@ export class AuthService {
       await AuditRepository.logEvent({
         userId: user.id,
         action: 'SUSPENDED_USER_LOGIN_ATTEMPT',
-        details: { username: cleanUsername },
+        ipAddress,
+        userAgent,
+        details: { username: user.username },
       });
       throw new Error('Account has been suspended');
     }
@@ -154,7 +162,9 @@ export class AuthService {
       await AuditRepository.logEvent({
         userId: user.id,
         action: 'USER_LOGIN_FAILED',
-        details: { username: cleanUsername },
+        ipAddress,
+        userAgent,
+        details: { username: user.username },
       });
       throw new Error('Invalid username or password');
     }
@@ -165,7 +175,9 @@ export class AuthService {
     await AuditRepository.logEvent({
       userId: user.id,
       action: 'USER_LOGIN_SUCCESS',
-      details: { username: cleanUsername },
+      ipAddress,
+      userAgent,
+      details: { username: user.username },
     });
 
     const token = this.generateToken({

@@ -8,7 +8,9 @@ export class AuthController {
   static async register(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const validated = registerSchema.parse(req.body);
-      const result = await AuthService.register(validated);
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip;
+      const userAgent = req.headers['user-agent'];
+      const result = await AuthService.register({ ...validated, ipAddress: clientIp, userAgent });
       res.status(201).json(result);
     } catch (err: any) {
       if (err.name === 'ZodError') {
@@ -23,7 +25,9 @@ export class AuthController {
   static async login(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const validated = loginSchema.parse(req.body);
-      const result = await AuthService.login(validated.username, validated.password);
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip;
+      const userAgent = req.headers['user-agent'];
+      const result = await AuthService.login(validated.username, validated.password, clientIp, userAgent);
       res.status(200).json(result);
     } catch (err: any) {
       if (err.name === 'ZodError') {

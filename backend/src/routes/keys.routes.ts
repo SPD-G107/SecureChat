@@ -71,12 +71,14 @@ const handlePublishOrRotateKey = async (req: AuthenticatedRequest, res: Response
 
     // Audit logging
     const action = savedKey.version > 1 ? 'PUBLIC_KEY_ROTATED' : 'PUBLIC_KEY_PUBLISHED';
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip;
     await AuditRepository.logEvent({
       userId: req.user!.userId,
       action,
-      ipAddress: req.ip,
+      ipAddress: clientIp,
       userAgent: req.headers['user-agent'],
       details: {
+        username: req.user!.username,
         version: savedKey.version,
         fingerprint: savedKey.fingerprint,
       },
