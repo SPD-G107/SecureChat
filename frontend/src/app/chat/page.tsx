@@ -2186,8 +2186,29 @@ export default function ChatPage() {
     setTimeout(() => setCopiedFingerprint(false), 2000);
   };
 
-  const hasKeyWarning =
-    activeContact && activeContact.publicKeyVersion > 1 && !dismissedWarnings[activeContact.id];
+  const isCurrentPeerOnline = activeContact ? onlineUserIds.has(activeContact.id) : false;
+  const isPeerVerified = Boolean(
+    activeContact &&
+      currentUser &&
+      typeof window !== 'undefined' &&
+      localStorage.getItem(`securechat_verified_${currentUser.id}_${activeContact.id}`) === activeContact.fingerprint
+  );
+
+  const isWarningDismissedForVersion = Boolean(
+    activeContact &&
+      currentUser &&
+      typeof window !== 'undefined' &&
+      (dismissedWarnings[activeContact.id] ||
+        localStorage.getItem(`securechat_dismissed_warn_${currentUser.id}_${activeContact.id}`) ===
+          String(activeContact.publicKeyVersion))
+  );
+
+  const hasKeyWarning = Boolean(
+    activeContact &&
+      activeContact.publicKeyVersion > 1 &&
+      !isPeerVerified &&
+      !isWarningDismissedForVersion
+  );
 
   if (loading) {
     return (
@@ -2198,14 +2219,6 @@ export default function ChatPage() {
       </div>
     );
   }
-
-  const isCurrentPeerOnline = activeContact ? onlineUserIds.has(activeContact.id) : false;
-  const isPeerVerified = Boolean(
-    activeContact &&
-      currentUser &&
-      typeof window !== 'undefined' &&
-      localStorage.getItem(`securechat_verified_${currentUser.id}_${activeContact.id}`) === activeContact.fingerprint
-  );
 
   const renderMessageContent = (msg: ChatMessage, isOwn: boolean) => {
     if (!msg.text) return null;
@@ -2812,13 +2825,21 @@ export default function ChatPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Link
-                    href="/verify-key"
+                    href={`/verify-key?user=${activeContact.username}`}
                     className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold rounded"
                   >
                     Verify
                   </Link>
                   <button
-                    onClick={() => setDismissedWarnings((prev) => ({ ...prev, [activeContact.id]: true }))}
+                    onClick={() => {
+                      if (currentUser?.id) {
+                        localStorage.setItem(
+                          `securechat_dismissed_warn_${currentUser.id}_${activeContact.id}`,
+                          String(activeContact.publicKeyVersion)
+                        );
+                      }
+                      setDismissedWarnings((prev) => ({ ...prev, [activeContact.id]: true }));
+                    }}
                     className="text-xs text-slate-400 hover:text-white underline"
                   >
                     Dismiss
