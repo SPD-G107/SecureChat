@@ -61,7 +61,7 @@ router.patch('/:messageId', async (req: AuthenticatedRequest, res: Response): Pr
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('message:edited', {
+      const editPayload = {
         messageId: updated.id,
         conversationId: updated.conversation_id,
         senderId: updated.sender_id,
@@ -69,7 +69,15 @@ router.patch('/:messageId', async (req: AuthenticatedRequest, res: Response): Pr
         iv: updated.initialization_vector,
         macTag: updated.mac_tag,
         isEdited: true,
-      });
+      };
+      const conv = await ConversationRepository.getConversationById(updated.conversation_id);
+      if (conv) {
+        const p1 = conv.participant1_id || (conv as any).user1_id;
+        const p2 = conv.participant2_id || (conv as any).user2_id;
+        io.to(`user:${p1}`).to(`user:${p2}`).emit('message:edited', editPayload);
+      } else {
+        io.to(`user:${req.user!.userId}`).emit('message:edited', editPayload);
+      }
     }
 
     res.json({ message: 'Message updated successfully', updatedMessage: updated });
@@ -91,11 +99,21 @@ router.delete('/:messageId', async (req: AuthenticatedRequest, res: Response): P
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('message:deleted', {
+      const deletePayload = {
         messageId,
         conversationId: result.conversationId,
         deletedBy: req.user!.userId,
-      });
+      };
+      const conv = result.conversationId
+        ? await ConversationRepository.getConversationById(result.conversationId)
+        : null;
+      if (conv) {
+        const p1 = conv.participant1_id || (conv as any).user1_id;
+        const p2 = conv.participant2_id || (conv as any).user2_id;
+        io.to(`user:${p1}`).to(`user:${p2}`).emit('message:deleted', deletePayload);
+      } else {
+        io.to(`user:${req.user!.userId}`).emit('message:deleted', deletePayload);
+      }
     }
 
     res.json({ message: 'Message deleted successfully', messageId });
@@ -108,6 +126,7 @@ router.delete('/:messageId', async (req: AuthenticatedRequest, res: Response): P
 router.delete('/conversation/:conversationId', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { conversationId } = req.params;
+    const conv = await ConversationRepository.getConversationById(conversationId);
     const cleared = await ConversationRepository.clearConversationMessages(conversationId, req.user!.userId);
 
     if (!cleared) {
@@ -117,10 +136,17 @@ router.delete('/conversation/:conversationId', async (req: AuthenticatedRequest,
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('conversation:cleared', {
+      const clearPayload = {
         conversationId,
         clearedBy: req.user!.userId,
-      });
+      };
+      if (conv) {
+        const p1 = conv.participant1_id || (conv as any).user1_id;
+        const p2 = conv.participant2_id || (conv as any).user2_id;
+        io.to(`user:${p1}`).to(`user:${p2}`).emit('conversation:cleared', clearPayload);
+      } else {
+        io.to(`user:${req.user!.userId}`).emit('conversation:cleared', clearPayload);
+      }
     }
 
     res.json({ message: 'Conversation cleared successfully', conversationId });

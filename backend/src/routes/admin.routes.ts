@@ -35,6 +35,13 @@ router.patch('/users/:id/status', async (req: AuthenticatedRequest, res: Respons
 
     await query('UPDATE users SET status = ? WHERE id = ?', [status, id]);
 
+    if (status === 'suspended') {
+      const io = req.app.get('io');
+      if (io) {
+        io.in(`user:${id}`).disconnectSockets(true);
+      }
+    }
+
     // Audit log administrative status change
     await AuditRepository.logEvent({
       userId: req.user!.userId,
@@ -94,6 +101,7 @@ router.delete('/users/:id', async (req: AuthenticatedRequest, res: Response): Pr
 
     const io = req.app.get('io');
     if (io) {
+      io.in(`user:${id}`).disconnectSockets(true);
       io.emit('user:deleted', { userId: id, username: user.username });
     }
 

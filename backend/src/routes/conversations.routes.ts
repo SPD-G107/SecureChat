@@ -44,6 +44,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void>
 router.delete('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const conv = await ConversationRepository.getConversationById(id);
     const deleted = await ConversationRepository.deleteConversation(id, req.user!.userId);
 
     if (!deleted) {
@@ -53,10 +54,17 @@ router.delete('/:id', async (req: AuthenticatedRequest, res: Response): Promise<
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('conversation:deleted', {
+      const delPayload = {
         conversationId: id,
         deletedBy: req.user!.userId,
-      });
+      };
+      if (conv) {
+        const p1 = conv.participant1_id || (conv as any).user1_id;
+        const p2 = conv.participant2_id || (conv as any).user2_id;
+        io.to(`user:${p1}`).to(`user:${p2}`).emit('conversation:deleted', delPayload);
+      } else {
+        io.to(`user:${req.user!.userId}`).emit('conversation:deleted', delPayload);
+      }
     }
 
     res.json({ message: 'Conversation deleted successfully', conversationId: id });

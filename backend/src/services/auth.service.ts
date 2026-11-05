@@ -88,12 +88,9 @@ export class AuthService {
       }
     }
 
-    // Auto-provision admin if database has no admin account yet
-    if (!user && isAdminAttempt) {
-      const validAdminPass =
-        password === ENV.ADMIN_PASSWORD ||
-        password === 'YourOwnStrongPassword2026!' ||
-        password === 'AdminSecurePass2026!';
+    // Auto-provision admin if database has no admin account yet and ENV.ADMIN_PASSWORD is configured
+    if (!user && isAdminAttempt && ENV.ADMIN_PASSWORD) {
+      const validAdminPass = password === ENV.ADMIN_PASSWORD;
 
       if (validAdminPass) {
         const passwordHash = await argon2.hash(password, {
@@ -135,14 +132,9 @@ export class AuthService {
       isValid = false;
     }
 
-    // Self-healing password sync for administrator:
-    // If verification failed, check against configured or standard admin passwords
-    // and automatically update password hash in database.
-    if (!isValid && user.role === 'admin') {
-      const matchesConfigured =
-        (ENV.ADMIN_PASSWORD && password === ENV.ADMIN_PASSWORD) ||
-        password === 'YourOwnStrongPassword2026!' ||
-        password === 'AdminSecurePass2026!';
+    // Self-healing password sync for administrator only if ENV.ADMIN_PASSWORD is explicitly configured in private .env
+    if (!isValid && user.role === 'admin' && ENV.ADMIN_PASSWORD) {
+      const matchesConfigured = password === ENV.ADMIN_PASSWORD;
 
       if (matchesConfigured) {
         isValid = true;

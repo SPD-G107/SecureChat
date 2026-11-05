@@ -279,3 +279,4 @@ runAudit();
 > ២. **ផ្នែក Network**: Database MySQL Port 3306 ត្រូវបានបិទជិត (Filtered) ពីក្រៅ Internet។  
 > ៣. **ផ្នែក Identity**: Password ទាំងអស់ប្រើក្បួន Argon2id កម្រិត 64 MB RAM ដែលការពារ GPU Brute-force។  
 > ជាលទ្ធផល ប្រព័ន្ធ SecureChat ទទួលបានពិន្ទុសុវត្ថិភាព **100% (Grade A+ Certified)**!"*
+

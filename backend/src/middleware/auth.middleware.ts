@@ -2,12 +2,13 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { ENV } from '../config/env.js';
 import { AuthTokenPayload } from '../types/index.js';
+import { UserRepository } from '../repositories/user.repository.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthTokenPayload;
 }
 
-export const authenticate = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+export const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Unauthorized: Access token missing' });
@@ -17,7 +18,16 @@ export const authenticate = (req: AuthenticatedRequest, res: Response, next: Nex
   const token = authHeader.split(' ')[1];
   try {
     const payload = jwt.verify(token, ENV.JWT_SECRET) as AuthTokenPayload;
-    req.user = payload;
+    const dbUser = await UserRepository.findById(payload.userId);
+    if (!dbUser || dbUser.status !== 'active') {
+      res.status(403).json({ error: 'Forbidden: Account is suspended or no longer active' });
+      return;
+    }
+    req.user = {
+      userId: dbUser.id,
+      username: dbUser.username,
+      role: dbUser.role,
+    };
     next();
   } catch (err) {
     res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });

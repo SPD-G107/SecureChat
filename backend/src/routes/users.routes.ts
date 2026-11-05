@@ -101,6 +101,13 @@ router.post('/avatar', async (req: AuthenticatedRequest, res: Response): Promise
       res.status(400).json({ error: 'Valid avatar image string is required' });
       return;
     }
+    if (
+      avatarUrl &&
+      !/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(avatarUrl)
+    ) {
+      res.status(400).json({ error: 'Invalid avatar format: Only Base64-encoded image data URIs are permitted' });
+      return;
+    }
     // Limit to 5MB base64 payload
     if (avatarUrl && avatarUrl.length > 5 * 1024 * 1024) {
       res.status(400).json({ error: 'Avatar image too large (max 3MB)' });

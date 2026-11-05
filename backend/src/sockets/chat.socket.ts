@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { ENV } from '../config/env.js';
 import { AuthTokenPayload } from '../types/index.js';
 import { ConversationRepository } from '../repositories/conversation.repository.js';
+import { UserRepository } from '../repositories/user.repository.js';
 import { PushService } from '../services/push.service.js';
 import { logger } from '../utils/logger.js';
 
@@ -18,8 +19,8 @@ export const getOnlineUserIds = (): string[] => {
 };
 
 export const setupChatSockets = (io: Server) => {
-  // Socket.IO authentication middleware
-  io.use((socket: AuthenticatedSocket, next) => {
+  // Socket.IO authentication middleware with real-time account status verification
+  io.use(async (socket: AuthenticatedSocket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.split(' ')[1];
     if (!token) {
       return next(new Error('Authentication required'));
@@ -27,7 +28,15 @@ export const setupChatSockets = (io: Server) => {
 
     try {
       const decoded = jwt.verify(token, ENV.JWT_SECRET) as AuthTokenPayload;
-      socket.user = decoded;
+      const dbUser = await UserRepository.findById(decoded.userId);
+      if (!dbUser || dbUser.status !== 'active') {
+        return next(new Error('Account is suspended or inactive'));
+      }
+      socket.user = {
+        userId: dbUser.id,
+        username: dbUser.username,
+        role: dbUser.role,
+      };
       next();
     } catch (err) {
       next(new Error('Invalid authentication token'));

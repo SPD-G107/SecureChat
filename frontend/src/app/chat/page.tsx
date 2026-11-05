@@ -166,46 +166,38 @@ export default function ChatPage() {
   // Pairwise AES-256-GCM encryption key cache
   const sharedKeysCache = useRef<Map<string, CryptoKey>>(new Map());
 
-  // Derives or retrieves shared symmetric key for conversation (ECDH P-256 or pairwise HKDF)
-  const getSharedKey = async (user: User, contact: Contact, conversationId: string): Promise<CryptoKey> => {
+  // Derives or retrieves shared symmetric key for conversation strictly using ECDH P-256 + HKDF-SHA256
+  const getSharedKey = async (user: User, contact: Contact, _conversationId: string): Promise<CryptoKey> => {
     const cacheKey = `${user.id}_${contact.id}`;
     if (sharedKeysCache.current.has(cacheKey)) {
       return sharedKeysCache.current.get(cacheKey)!;
     }
 
-    // 1. Try real ECDH key derivation if local private key and peer public key exist
-    try {
-      const localIdentity = CryptoEngine.getLocalIdentity(user.username);
-      if (localIdentity?.privateKey) {
-        const keyInfo = await ApiClient.get(`/keys/${contact.id}`);
-        if (keyInfo?.publicKey) {
-          const myPriv = await CryptoEngine.importPrivateKey(localIdentity.privateKey);
-          const peerPub = await CryptoEngine.importPublicKey(keyInfo.publicKey);
-          const derived = await CryptoEngine.deriveSymmetricKey(myPriv, peerPub);
-          sharedKeysCache.current.set(cacheKey, derived);
-          return derived;
-        }
-      }
-    } catch (err) {
-      console.warn('ECDH derivation fallback to pairwise conversation key:', err);
+    // 1. Ensure current user has a local ECDH P-256 identity keypair on this device
+    let localIdentity = CryptoEngine.getLocalIdentity(user.username);
+    if (!localIdentity?.privateKey) {
+      const keyPair = await CryptoEngine.generateIdentityKeyPair();
+      const pubBase64 = await CryptoEngine.exportPublicKey(keyPair.publicKey);
+      const privBase64 = await CryptoEngine.exportPrivateKey(keyPair.privateKey);
+      const fp = await CryptoEngine.computeFingerprint(pubBase64);
+      CryptoEngine.saveLocalIdentity(user.username, privBase64, pubBase64, fp);
+      localIdentity = { privateKey: privBase64, publicKey: pubBase64, fingerprint: fp };
+      try {
+        await ApiClient.post('/keys/rotate', { publicKey: pubBase64, fingerprint: fp });
+      } catch {}
     }
 
-    // 2. Deterministic pairwise HKDF key derived from unique shared conversation UUID
-    // Both participants share the same conversation.id in MySQL, so both derive the identical AES-256-GCM key!
-    const enc = new TextEncoder();
-    const hashBuffer = await window.crypto.subtle.digest(
-      'SHA-256',
-      enc.encode(`SecureChat_Pairwise_Key_v1_${conversationId}`)
-    );
-    const fallbackKey = await window.crypto.subtle.importKey(
-      'raw',
-      hashBuffer,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
-    sharedKeysCache.current.set(cacheKey, fallbackKey);
-    return fallbackKey;
+    // 2. Fetch peer's ECDH P-256 public key and derive shared AES-256-GCM key via HKDF-SHA256
+    const keyInfo = await ApiClient.get(`/keys/${contact.id}`);
+    if (!keyInfo?.publicKey) {
+      throw new Error(`Recipient @${contact.username || contact.id} does not have a registered E2EE public key`);
+    }
+
+    const myPriv = await CryptoEngine.importPrivateKey(localIdentity.privateKey);
+    const peerPub = await CryptoEngine.importPublicKey(keyInfo.publicKey);
+    const derived = await CryptoEngine.deriveSymmetricKey(myPriv, peerPub);
+    sharedKeysCache.current.set(cacheKey, derived);
+    return derived;
   };
 
   // ==========================================
@@ -537,8 +529,20 @@ export default function ChatPage() {
     // Load user's REAL active conversations from MySQL
     loadActiveConversations(parsedUser);
 
-    // Initialize local conversation AES-256-GCM encryption key
-    if (window.crypto?.subtle) {
+    // Ensure local ECDH P-256 identity keypair exists on this device and is registered
+    if (window.crypto?.subtle && parsedUser?.username) {
+      const existingIdentity = CryptoEngine.getLocalIdentity(parsedUser.username);
+      if (!existingIdentity?.privateKey) {
+        CryptoEngine.generateIdentityKeyPair()
+          .then(async (kp) => {
+            const pub = await CryptoEngine.exportPublicKey(kp.publicKey);
+            const priv = await CryptoEngine.exportPrivateKey(kp.privateKey);
+            const fp = await CryptoEngine.computeFingerprint(pub);
+            CryptoEngine.saveLocalIdentity(parsedUser.username, priv, pub, fp);
+            await ApiClient.post('/keys/rotate', { publicKey: pub, fingerprint: fp });
+          })
+          .catch(() => {});
+      }
       window.crypto.subtle
         .generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
         .then((k) => setCryptoKey(k))
@@ -666,68 +670,22 @@ export default function ChatPage() {
           try {
             const convId = incoming.conversationId || incoming.conversation_id || `conv-${senderId}`;
 
-            // 1. Try ECDH key derivation if peer contact exists
-            let sharedKey: CryptoKey | null = null;
-            if (currentUser) {
-              const peerContact =
-                directoryUsers.find((u) => u.id === senderId) ||
-                (activeContactRef.current?.id === senderId ? activeContactRef.current : null) ||
-                conversations.find((c) => c.peer_id === senderId)?.contact ||
-                ({ id: senderId, username: incoming.sender_username || senderId } as Contact);
+            // Strict ECDH P-256 + HKDF-SHA256 shared key derivation
+            const peerContact =
+              (activeContactRef.current?.id === senderId ? activeContactRef.current : null) ||
+              ({ id: senderId, username: incoming.sender_username || senderId } as Contact);
 
-              if (peerContact) {
-                try {
-                  sharedKey = await getSharedKey(currentUser, peerContact, convId);
-                } catch {}
-              }
-            }
-
-            if (sharedKey) {
-              try {
-                textContent = await CryptoEngine.decrypt(
-                  incoming.encryptedPayload,
-                  incoming.iv,
-                  incoming.macTag,
-                  sharedKey
-                );
-              } catch {}
-            }
-
-            // 2. Pairwise conversation fallback key
-            if (!textContent) {
-              try {
-                const enc = new TextEncoder();
-                const hashBuffer = await window.crypto.subtle.digest(
-                  'SHA-256',
-                  enc.encode(`SecureChat_Pairwise_Key_v1_${convId}`)
-                );
-                const fallbackKey = await window.crypto.subtle.importKey(
-                  'raw',
-                  hashBuffer,
-                  { name: 'AES-GCM', length: 256 },
-                  false,
-                  ['decrypt']
-                );
-                textContent = await CryptoEngine.decrypt(
-                  incoming.encryptedPayload,
-                  incoming.iv,
-                  incoming.macTag,
-                  fallbackKey
-                );
-              } catch {}
-            }
-
-            // 3. Fallback attempt: if base64 encoded URL
-            if (!textContent) {
-              try {
-                const decoded = decodeURIComponent(atob(incoming.encryptedPayload));
-                if (decoded && !decoded.includes('\ufffd') && decoded.length > 0) {
-                  textContent = decoded;
-                }
-              } catch {}
+            if (parsedUser && peerContact) {
+              const sharedKey = await getSharedKey(parsedUser, peerContact, convId);
+              textContent = await CryptoEngine.decrypt(
+                incoming.encryptedPayload,
+                incoming.iv,
+                incoming.macTag,
+                sharedKey
+              );
             }
           } catch (err) {
-            console.warn('Real-time decryption error:', err);
+            console.warn('Real-time E2EE decryption error:', err);
           }
         }
 
@@ -846,27 +804,24 @@ export default function ChatPage() {
       socket.on('message:edited', async (data: any) => {
         if (!data || !data.messageId) return;
         let decryptedText: string | null = null;
-        if (data.encryptedPayload && data.iv && data.macTag) {
+        if (data.encryptedPayload && data.iv && data.macTag && parsedUser) {
           try {
             const convId = data.conversationId || `conv-${data.senderId}`;
-            const enc = new TextEncoder();
-            const hashBuffer = await window.crypto.subtle.digest(
-              'SHA-256',
-              enc.encode(`SecureChat_Pairwise_Key_v1_${convId}`)
-            );
-            const fallbackKey = await window.crypto.subtle.importKey(
-              'raw',
-              hashBuffer,
-              { name: 'AES-GCM', length: 256 },
-              false,
-              ['decrypt']
-            );
-            decryptedText = await CryptoEngine.decrypt(
-              data.encryptedPayload,
-              data.iv,
-              data.macTag,
-              fallbackKey
-            );
+            const peerId = data.senderId === parsedUser.id
+              ? activeContactRef.current?.id
+              : data.senderId;
+            if (peerId) {
+              const peerContact =
+                (activeContactRef.current?.id === peerId ? activeContactRef.current : null) ||
+                ({ id: peerId, username: peerId } as Contact);
+              const sharedKey = await getSharedKey(parsedUser, peerContact, convId);
+              decryptedText = await CryptoEngine.decrypt(
+                data.encryptedPayload,
+                data.iv,
+                data.macTag,
+                sharedKey
+              );
+            }
           } catch {}
         }
 
@@ -1553,16 +1508,6 @@ export default function ChatPage() {
                   }
                 }
 
-                // Fallback attempt: if base64 encoded URL string
-                if (!displayText || displayText === 'Encrypted incoming message' || displayText === 'Encrypted outgoing message') {
-                  try {
-                    const decoded = decodeURIComponent(atob(m.encrypted_payload));
-                    if (decoded && !decoded.includes('\ufffd') && decoded.length > 0) {
-                      displayText = decoded;
-                    }
-                  } catch {}
-                }
-
                 if (!displayText) {
                   displayText = m.sender_id === currentUser.id ? 'Encrypted outgoing message' : 'Encrypted incoming message';
                 }
@@ -1835,10 +1780,10 @@ export default function ChatPage() {
       cipherBase64 = enc.ciphertext;
       ivBase64 = enc.iv;
       macTagBase64 = enc.macTag;
-    } catch {
-      cipherBase64 = btoa(encodeURIComponent(mediaString));
-      ivBase64 = btoa('iv_nonce_96').slice(0, 16);
-      macTagBase64 = btoa('auth_mac_128').slice(0, 22);
+    } catch (err) {
+      console.error('E2EE encryption failed for media message:', err);
+      alert('Cannot send unencrypted media: recipient E2EE public key is unavailable.');
+      return;
     }
 
     const isPeerOnline = onlineUserIds.has(activeContact.id);
@@ -2081,10 +2026,10 @@ export default function ChatPage() {
         cipherBase64 = enc.ciphertext;
         ivBase64 = enc.iv;
         macTagBase64 = enc.macTag;
-      } catch {
-        cipherBase64 = btoa(encodeURIComponent(textToSend));
-        ivBase64 = btoa('iv_nonce_96').slice(0, 16);
-        macTagBase64 = btoa('auth_mac_128').slice(0, 22);
+      } catch (err) {
+        console.error('E2EE encryption failed for edited message:', err);
+        alert('Cannot edit message: E2EE encryption failed.');
+        return;
       }
 
       try {
@@ -2135,17 +2080,17 @@ export default function ChatPage() {
     const conv = conversations.find((c) => c.peer_id === activeContact.id);
     const convId = conv?.id || `conv-${activeContact.id}`;
 
-    // Real client-side AES-256-GCM authenticated encryption using pairwise shared key
+    // Real client-side AES-256-GCM authenticated encryption using pairwise ECDH P-256 shared key
     try {
       const sharedKey = await getSharedKey(currentUser, activeContact, convId);
       const enc = await CryptoEngine.encrypt(textToSend, sharedKey);
       cipherBase64 = enc.ciphertext;
       ivBase64 = enc.iv;
       macTagBase64 = enc.macTag;
-    } catch {
-      cipherBase64 = btoa(encodeURIComponent(textToSend));
-      ivBase64 = btoa('iv_nonce_96').slice(0, 16);
-      macTagBase64 = btoa('auth_mac_128').slice(0, 22);
+    } catch (err) {
+      console.error('E2EE encryption failed for outgoing message:', err);
+      alert('Cannot send unencrypted message: recipient E2EE public key is unavailable.');
+      return;
     }
 
     // Determine initial status based on real recipient presence:
