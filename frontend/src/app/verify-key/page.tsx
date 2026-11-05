@@ -14,11 +14,15 @@ import {
   Users,
   Shield,
   ArrowRightLeft,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function VerifyKeyPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [myFingerprint, setMyFingerprint] = useState<string>('');
+  const [myVersion, setMyVersion] = useState<number>(1);
+  const [isRotating, setIsRotating] = useState<boolean>(false);
+  const [rotateNotice, setRotateNotice] = useState<string | null>(null);
   const [searchUsername, setSearchUsername] = useState('');
   const [keyData, setKeyData] = useState<any | null>(null);
   const [mutualSafetyNumber, setMutualSafetyNumber] = useState<string>('');
@@ -45,6 +49,7 @@ export default function VerifyKeyPage() {
           .then((k) => {
             if (k && k.fingerprint) {
               setMyFingerprint(k.fingerprint);
+              setMyVersion(k.version || 1);
             }
           })
           .catch(() => {});
@@ -105,6 +110,7 @@ export default function VerifyKeyPage() {
           if (myKey && myKey.fingerprint) {
             myFp = myKey.fingerprint;
             setMyFingerprint(myFp);
+            setMyVersion(myKey.version || 1);
           }
         } catch {}
       }
@@ -168,6 +174,42 @@ export default function VerifyKeyPage() {
     navigator.clipboard.writeText(keyData.fingerprint);
     setCopiedPeer(true);
     setTimeout(() => setCopiedPeer(false), 2000);
+  };
+
+  const handleRotateMyKey = async () => {
+    if (!currentUser?.username) return;
+    setIsRotating(true);
+    setRotateNotice(null);
+    setError(null);
+    try {
+      const keypair = await CryptoEngine.generateIdentityKeyPair();
+      const pubKey = await CryptoEngine.exportPublicKey(keypair.publicKey);
+      const privKey = await CryptoEngine.exportPrivateKey(keypair.privateKey);
+      const newFp = await CryptoEngine.computeFingerprint(pubKey);
+
+      CryptoEngine.saveLocalIdentity(currentUser.username, privKey, pubKey, newFp);
+
+      const res = await ApiClient.post('/keys/publish', {
+        publicKey: pubKey,
+        fingerprint: newFp,
+      });
+
+      const nextVer = res?.key?.version || myVersion + 1;
+      setMyFingerprint(newFp);
+      setMyVersion(nextVer);
+
+      if (keyData?.fingerprint) {
+        const updatedMutual = await CryptoEngine.computeMutualSafetyNumber(newFp, keyData.fingerprint);
+        setMutualSafetyNumber(updatedMutual);
+      }
+
+      setRotateNotice(`Your ECDH P-256 identity key on this device is now active (v${nextVer})!`);
+      setTimeout(() => setRotateNotice(null), 5000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to rotate your identity key.');
+    } finally {
+      setIsRotating(false);
+    }
   };
 
   return (
@@ -323,15 +365,31 @@ export default function VerifyKeyPage() {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-bold text-cyan-400">Your Key (@{currentUser?.username || 'You'})</span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-mono">
-                      v1
+                      v{myVersion}
                     </span>
                   </div>
                   <p className="font-mono text-[11px] text-slate-300 break-all select-all bg-black/40 p-2 rounded-lg">
                     {myFingerprint || 'Loading your key...'}
                   </p>
-                  <p className="mt-2 text-[10px] text-slate-500">
-                    Your on-device ECDH P-256 public identity key
-                  </p>
+                  <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[10px] text-slate-500">
+                      Your on-device ECDH P-256 key
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRotateMyKey}
+                      disabled={isRotating}
+                      className="px-2.5 py-1 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 text-[10px] font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRotating ? 'animate-spin' : ''}`} />
+                      <span>{isRotating ? 'Rotating...' : 'Rotate My Key'}</span>
+                    </button>
+                  </div>
+                  {rotateNotice && (
+                    <p className="mt-2 text-[10px] text-emerald-400 font-medium">
+                      ✓ {rotateNotice}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
