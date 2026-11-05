@@ -178,69 +178,43 @@ export default function ChatPage() {
     }
   };
 
-  // Derives secondary HKDF-SHA256 AES-256-GCM key for cross-device / legacy-key compatibility
-  const getSecondaryHkdfKey = async (userIdA: string, userIdB: string, conversationId: string): Promise<CryptoKey> => {
-    const sortedPair = [userIdA, userIdB].sort().join(':');
-    const enc = new TextEncoder();
-    const rawKeyMaterial = await window.crypto.subtle.importKey(
-      'raw',
-      enc.encode(`SecureChat_HKDF_Master_${sortedPair}_${conversationId}`),
-      { name: 'HKDF' },
-      false,
-      ['deriveKey']
-    );
-    return window.crypto.subtle.deriveKey(
-      {
-        name: 'HKDF',
-        hash: 'SHA-256',
-        salt: enc.encode(`SecureChat_Salt_${sortedPair}`),
-        info: enc.encode('SecureChat_AES256GCM_v2'),
-      },
-      rawKeyMaterial,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
-  };
-
-  // Derives or retrieves shared symmetric key for conversation using ECDH P-256 + HKDF-SHA256
-  const getSharedKey = async (user: User, contact: Contact, conversationId: string): Promise<CryptoKey> => {
+  // Derives or retrieves shared symmetric key for conversation strictly using device-bound ECDH P-256 + HKDF-SHA256
+  const getSharedKey = async (user: User, contact: Contact, _conversationId: string): Promise<CryptoKey> => {
     const cacheKey = `${user.id}_${contact.id}`;
     if (sharedKeysCache.current.has(cacheKey)) {
       return sharedKeysCache.current.get(cacheKey)!;
     }
 
-    try {
-      // 1. Ensure current user has a local ECDH P-256 identity keypair on this device
-      let localIdentity = CryptoEngine.getLocalIdentity(user.username);
-      if (!localIdentity?.privateKey) {
-        const keyPair = await CryptoEngine.generateIdentityKeyPair();
-        const pubBase64 = await CryptoEngine.exportPublicKey(keyPair.publicKey);
-        const privBase64 = await CryptoEngine.exportPrivateKey(keyPair.privateKey);
-        const fp = await CryptoEngine.computeFingerprint(pubBase64);
-        CryptoEngine.saveLocalIdentity(user.username, privBase64, pubBase64, fp);
-        localIdentity = { privateKey: privBase64, publicKey: pubBase64, fingerprint: fp };
+    // 1. Check local ECDH P-256 identity keypair on this device
+    let localIdentity = CryptoEngine.getLocalIdentity(user.username);
+    if (!localIdentity?.privateKey) {
+      const keyPair = await CryptoEngine.generateIdentityKeyPair();
+      const pubBase64 = await CryptoEngine.exportPublicKey(keyPair.publicKey);
+      const privBase64 = await CryptoEngine.exportPrivateKey(keyPair.privateKey);
+      const fp = await CryptoEngine.computeFingerprint(pubBase64);
+      CryptoEngine.saveLocalIdentity(user.username, privBase64, pubBase64, fp);
+      localIdentity = { privateKey: privBase64, publicKey: pubBase64, fingerprint: fp };
+      // Only publish if this account does not already have a primary device public key on the server
+      try {
+        await ApiClient.get(`/keys/${user.id}`);
+      } catch {
         try {
           await ApiClient.post('/keys/publish', { publicKey: pubBase64, fingerprint: fp });
         } catch {}
       }
-
-      // 2. Fetch peer's ECDH P-256 public key and derive shared AES-256-GCM key via HKDF-SHA256
-      const keyInfo = await ApiClient.get(`/keys/${contact.id}`);
-      if (keyInfo?.publicKey) {
-        const myPriv = await CryptoEngine.importPrivateKey(localIdentity.privateKey);
-        const peerPub = await CryptoEngine.importPublicKey(keyInfo.publicKey);
-        const derived = await CryptoEngine.deriveSymmetricKey(myPriv, peerPub);
-        sharedKeysCache.current.set(cacheKey, derived);
-        return derived;
-      }
-    } catch (err) {
-      console.warn('Primary ECDH key derivation unavailable, using HKDF-SHA256 pairwise key:', err);
     }
 
-    const hkdfKey = await getSecondaryHkdfKey(user.id, contact.id, conversationId);
-    sharedKeysCache.current.set(cacheKey, hkdfKey);
-    return hkdfKey;
+    // 2. Fetch peer's ECDH P-256 public key and derive shared AES-256-GCM key via HKDF-SHA256
+    const keyInfo = await ApiClient.get(`/keys/${contact.id}`);
+    if (!keyInfo?.publicKey) {
+      throw new Error(`Recipient @${contact.username || contact.id} does not have a registered E2EE public key`);
+    }
+
+    const myPriv = await CryptoEngine.importPrivateKey(localIdentity.privateKey);
+    const peerPub = await CryptoEngine.importPublicKey(keyInfo.publicKey);
+    const derived = await CryptoEngine.deriveSymmetricKey(myPriv, peerPub);
+    sharedKeysCache.current.set(cacheKey, derived);
+    return derived;
   };
 
   // ==========================================
@@ -582,7 +556,12 @@ export default function ChatPage() {
             const priv = await CryptoEngine.exportPrivateKey(kp.privateKey);
             const fp = await CryptoEngine.computeFingerprint(pub);
             CryptoEngine.saveLocalIdentity(parsedUser.username, priv, pub, fp);
-            await ApiClient.post('/keys/publish', { publicKey: pub, fingerprint: fp });
+            // Only publish to server if this account has no primary device key registered yet
+            try {
+              await ApiClient.get(`/keys/${parsedUser.id}`);
+            } catch {
+              await ApiClient.post('/keys/publish', { publicKey: pub, fingerprint: fp });
+            }
           })
           .catch(() => {});
       }
@@ -719,23 +698,13 @@ export default function ChatPage() {
               ({ id: senderId, username: incoming.sender_username || senderId } as Contact);
 
             if (parsedUser && peerContact) {
-              try {
-                const sharedKey = await getSharedKey(parsedUser, peerContact, convId);
-                textContent = await CryptoEngine.decrypt(
-                  incoming.encryptedPayload,
-                  incoming.iv,
-                  incoming.macTag,
-                  sharedKey
-                );
-              } catch {
-                const hkdfKey = await getSecondaryHkdfKey(parsedUser.id, senderId, convId);
-                textContent = await CryptoEngine.decrypt(
-                  incoming.encryptedPayload,
-                  incoming.iv,
-                  incoming.macTag,
-                  hkdfKey
-                );
-              }
+              const sharedKey = await getSharedKey(parsedUser, peerContact, convId);
+              textContent = await CryptoEngine.decrypt(
+                incoming.encryptedPayload,
+                incoming.iv,
+                incoming.macTag,
+                sharedKey
+              );
             }
           } catch (err) {
             console.warn('Real-time E2EE decryption error:', err);
@@ -864,23 +833,13 @@ export default function ChatPage() {
               const peerContact =
                 (activeContactRef.current?.id === peerId ? activeContactRef.current : null) ||
                 ({ id: peerId, username: peerId } as Contact);
-              try {
-                const sharedKey = await getSharedKey(parsedUser, peerContact, convId);
-                decryptedText = await CryptoEngine.decrypt(
-                  data.encryptedPayload,
-                  data.iv,
-                  data.macTag,
-                  sharedKey
-                );
-              } catch {
-                const hkdfKey = await getSecondaryHkdfKey(parsedUser.id, peerId, convId);
-                decryptedText = await CryptoEngine.decrypt(
-                  data.encryptedPayload,
-                  data.iv,
-                  data.macTag,
-                  hkdfKey
-                );
-              }
+              const sharedKey = await getSharedKey(parsedUser, peerContact, convId);
+              decryptedText = await CryptoEngine.decrypt(
+                data.encryptedPayload,
+                data.iv,
+                data.macTag,
+                sharedKey
+              );
             }
           } catch {}
         }
