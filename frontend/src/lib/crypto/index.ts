@@ -182,6 +182,20 @@ export class CryptoEngine {
   }
 
   /**
+   * Converts a Uint8Array of any size (including multi-MB images/files) to Base64
+   * in 32KB chunks without overflowing the JavaScript call stack.
+   */
+  private static bytesToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const chunkSize = 0x8000; // 32,768 bytes per chunk
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+    }
+    return btoa(binary);
+  }
+
+  /**
    * Encrypts plaintext string using AES-256-GCM with a 96-bit CSPRNG IV
    */
   static async encrypt(
@@ -202,9 +216,9 @@ export class CryptoEngine {
     const macBytes = fullCipher.slice(fullCipher.length - 16);
 
     return {
-      ciphertext: btoa(String.fromCharCode(...payloadBytes)),
-      iv: btoa(String.fromCharCode(...iv)),
-      macTag: btoa(String.fromCharCode(...macBytes)),
+      ciphertext: this.bytesToBase64(payloadBytes),
+      iv: this.bytesToBase64(iv),
+      macTag: this.bytesToBase64(macBytes),
     };
   }
 

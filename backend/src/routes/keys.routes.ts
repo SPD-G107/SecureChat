@@ -49,7 +49,7 @@ router.get('/:userId/history', authenticate, async (req: AuthenticatedRequest, r
 });
 
 // Publish or rotate client public key
-router.post('/publish', authenticate, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+const handlePublishOrRotateKey = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { publicKey, fingerprint } = req.body;
 
@@ -93,6 +93,9 @@ router.post('/publish', authenticate, async (req: AuthenticatedRequest, res: Res
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to publish public key' });
   }
-});
+};
+
+router.post('/publish', authenticate, handlePublishOrRotateKey);
+router.post('/rotate', authenticate, handlePublishOrRotateKey);
 
 export default router;
