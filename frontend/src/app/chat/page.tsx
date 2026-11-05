@@ -179,9 +179,9 @@ export default function ChatPage() {
   };
 
   // Derives or retrieves shared symmetric key for conversation strictly using device-bound ECDH P-256 + HKDF-SHA256
-  const getSharedKey = async (user: User, contact: Contact, _conversationId: string): Promise<CryptoKey> => {
+  const getSharedKey = async (user: User, contact: Contact, _conversationId: string, forceRefresh = false): Promise<CryptoKey> => {
     const cacheKey = `${user.id}_${contact.id}`;
-    if (sharedKeysCache.current.has(cacheKey)) {
+    if (!forceRefresh && sharedKeysCache.current.has(cacheKey)) {
       return sharedKeysCache.current.get(cacheKey)!;
     }
 
@@ -698,13 +698,24 @@ export default function ChatPage() {
               ({ id: senderId, username: incoming.sender_username || senderId } as Contact);
 
             if (parsedUser && peerContact) {
-              const sharedKey = await getSharedKey(parsedUser, peerContact, convId);
-              textContent = await CryptoEngine.decrypt(
-                incoming.encryptedPayload,
-                incoming.iv,
-                incoming.macTag,
-                sharedKey
-              );
+              try {
+                const sharedKey = await getSharedKey(parsedUser, peerContact, convId);
+                textContent = await CryptoEngine.decrypt(
+                  incoming.encryptedPayload,
+                  incoming.iv,
+                  incoming.macTag,
+                  sharedKey
+                );
+              } catch {
+                // Peer may have rotated their identity key (v1 -> v2); refresh cached key and retry decryption
+                const refreshedKey = await getSharedKey(parsedUser, peerContact, convId, true);
+                textContent = await CryptoEngine.decrypt(
+                  incoming.encryptedPayload,
+                  incoming.iv,
+                  incoming.macTag,
+                  refreshedKey
+                );
+              }
             }
           } catch (err) {
             console.warn('Real-time E2EE decryption error:', err);
