@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Shield, Users, ArrowUpRight, Activity, FileText, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { Shield, Users, ArrowUpRight, Activity, FileText, CheckCircle2, Loader2, AlertCircle, Search } from 'lucide-react';
 import { ApiClient } from '@/lib/api-client';
 
 export default function AdminDashboardPage() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [actionFilter, setActionFilter] = useState<'ALL' | 'LOGIN' | 'FAILED' | 'KEY'>('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,14 +81,42 @@ export default function AdminDashboardPage() {
 
       {/* Security Audit Logs */}
       <div className="bg-slate-900/80 border border-emerald-950 rounded-2xl overflow-hidden shadow-xl">
-        <div className="px-6 py-4 border-b border-emerald-950/80 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-emerald-950/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-emerald-400" />
             <h2 className="text-sm font-bold text-white">Recent Security Audit Logs</h2>
           </div>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">
-            Zero Passwords / Secrets Stored
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Filter @user or IP..."
+                className="pl-7 pr-2.5 py-1 text-[11px] rounded-lg bg-slate-950 border border-slate-800 text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              {(['ALL', 'LOGIN', 'FAILED', 'KEY'] as const).map((filterKey) => (
+                <button
+                  key={filterKey}
+                  type="button"
+                  onClick={() => setActionFilter(filterKey)}
+                  className={`px-2 py-1 rounded-md text-[10px] font-mono border transition-colors ${
+                    actionFilter === filterKey
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  {filterKey}
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">
+              Zero Passwords / Secrets Stored
+            </span>
+          </div>
         </div>
 
         {loading ? (
@@ -100,7 +130,22 @@ export default function AdminDashboardPage() {
           </div>
         ) : (
           <div className="divide-y divide-slate-800/80">
-            {auditLogs.slice(0, 25).map((log) => {
+            {auditLogs
+              .filter((log) => {
+                if (actionFilter === 'LOGIN' && !String(log.action).includes('LOGIN_SUCCESS')) return false;
+                if (actionFilter === 'FAILED' && !String(log.action).includes('FAILED') && !String(log.action).includes('SUSPEND')) return false;
+                if (actionFilter === 'KEY' && !String(log.action).includes('KEY')) return false;
+                if (!searchTerm.trim()) return true;
+                const q = searchTerm.trim().toLowerCase();
+                return (
+                  String(log.username || '').toLowerCase().includes(q) ||
+                  String(log.action || '').toLowerCase().includes(q) ||
+                  String(log.ip_address || '').toLowerCase().includes(q) ||
+                  String(log.details || '').toLowerCase().includes(q)
+                );
+              })
+              .slice(0, 25)
+              .map((log) => {
               let parsedDetails: any = null;
               if (log.details) {
                 try {
@@ -113,14 +158,19 @@ export default function AdminDashboardPage() {
                 parsedDetails?.attemptedUsername ||
                 parsedDetails?.deletedUsername ||
                 null;
+              const isWarningEvent = String(log.action).includes('FAILED') || String(log.action).includes('SUSPEND');
 
               return (
                 <div key={log.id} className="px-6 py-3.5 flex items-center justify-between hover:bg-slate-800/30 transition-colors text-xs gap-4">
                   <div className="flex items-center gap-3 min-w-0">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    {isWarningEvent ? (
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    )}
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-emerald-300 font-semibold">{log.action}</span>
+                        <span className={`font-mono font-semibold ${isWarningEvent ? 'text-amber-300' : 'text-emerald-300'}`}>{log.action}</span>
                         <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-cyan-300 font-mono text-[11px] font-semibold">
                           {displayUsername ? `@${displayUsername}` : `ID: ${log.user_id || 'System'}`}
                         </span>
