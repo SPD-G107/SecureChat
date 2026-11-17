@@ -682,7 +682,7 @@ docker compose up --build
    - Camera flip support for dual-camera smartphones, microphone mute toggle, and camera privacy shutter.
 4. **Symmetric NAT & 4G/5G Traversal with Self-Hosted Coturn Relay**:
    - Primary connectivity leverages ultra-fast Google and Cloudflare STUN nodes for direct zero-latency P2P DTLS-SRTP streams on local Wi-Fi and cone NAT networks.
-   - For restricted mobile networks (4G/5G Carrier-Grade Symmetric NAT) where direct UDP traversal is dropped, a dedicated self-hosted Coturn TURN relay is deployed via `docker-compose.yml` (`turn:3.16.212.72:3478`), supporting both UDP and TCP relay transports with zero third-party cloud API dependencies.
+   - For restricted mobile networks (4G/5G Carrier-Grade Symmetric NAT) where direct UDP traversal is dropped, a dedicated self-hosted Coturn TURN relay is deployed via `docker-compose.yml` (`turn:18.140.114.212:3478`), supporting both UDP and TCP relay transports with zero third-party cloud API dependencies.
 5. **Background Lock-Screen Call Wakeup via W3C Web Push**:
    - Integrated RFC 8291 / RFC 8292 standard Web Push protocol with VAPID key authentication and MySQL subscription tracking.
    - When a recipient's phone screen is locked or browser tab is closed, incoming calls and messages trigger high-priority Web Push payloads directly to the PWA Service Worker (`sw.js`).

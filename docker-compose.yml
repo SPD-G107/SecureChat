@@ -40,12 +40,18 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-adminSecureChat}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      CORS_ORIGIN: http://localhost:3000
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://18-140-114-212.sslip.io}
     ports:
       - "5000:5000"
     depends_on:
       mysql:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - securechat-network
 
@@ -63,7 +69,14 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
     networks:
       - securechat-network
 
@@ -81,9 +94,9 @@ services:
       - --listening-port=3478
       - --fingerprint
       - --lt-cred-mech
-      - --realm=3-16-212-72.sslip.io
+      - --realm=18-140-114-212.sslip.io
       - --user=securechat:securechat_turn_2026
-      - --external-ip=3.16.212.72
+      - --external-ip=18.140.114.212
     networks:
       - securechat-network
 
