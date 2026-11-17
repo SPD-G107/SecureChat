@@ -3,8 +3,8 @@
  * SecureChat Automated Security Audit & Verification Suite (Group 7 Capstone)
  * Robust 25-Point Multi-Domain Security Verification Engine & Hardening Auditor
  * Targets:
- *   Frontend: https://3-16-212-72.sslip.io (EC2 Host: 3.16.212.72)
- *   Backend API: http://3.16.212.72:5000
+ *   Frontend: https://18-140-114-212.sslip.io (EC2 Host: 18.140.114.212)
+ *   Backend API: http://18.140.114.212:5000
  * ==============================================================================
  */
 
@@ -12,8 +12,8 @@ import net from 'node:net';
 import { webcrypto } from 'node:crypto';
 
 const subtle = webcrypto.subtle;
-const HOST = process.env.AUDIT_HOST || process.argv[2] || '3.16.212.72';
-const WEB_URL = process.env.AUDIT_URL || process.argv[3] || 'https://3-16-212-72.sslip.io';
+const HOST = process.env.AUDIT_HOST || process.argv[2] || '18.140.114.212';
+const WEB_URL = process.env.AUDIT_URL || process.argv[3] || 'https://18-140-114-212.sslip.io';
 const API_URL = process.env.API_URL || process.argv[4] || `http://${HOST}:5000`;
 
 // Terminal Colors
