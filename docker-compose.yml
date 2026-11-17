@@ -81,9 +81,9 @@ services:
       - --listening-port=3478
       - --fingerprint
       - --lt-cred-mech
-      - --realm=3-16-212-72.sslip.io
+      - --realm=18-140-114-212.sslip.io
       - --user=securechat:securechat_turn_2026
-      - --external-ip=3.16.212.72
+      - --external-ip=18.140.114.212
     networks:
       - securechat-network
 

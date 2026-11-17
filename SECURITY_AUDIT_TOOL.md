@@ -35,7 +35,7 @@ node scripts/security-audit.mjs
  * ==============================================================================
  * SecureChat Automated Security Audit & Verification Suite (Group 7 Capstone)
  * Standalone Zero-Dependency Security Verification Engine
- * Target: https://3-16-212-72.sslip.io (EC2 Host: 3.16.212.72)
+ * Target: https://18-140-114-212.sslip.io (EC2 Host: 18.140.114.212)
  * ==============================================================================
  */
 
@@ -43,8 +43,8 @@ import net from 'node:net';
 import { webcrypto } from 'node:crypto';
 
 const subtle = webcrypto.subtle;
-const HOST = '3.16.212.72';
-const WEB_URL = 'https://3-16-212-72.sslip.io';
+const HOST = '18.140.114.212';
+const WEB_URL = 'https://18-140-114-212.sslip.io';
 
 // Terminal Colors
 const C = {
@@ -261,11 +261,11 @@ runAudit();
 1. **Cryptographic Integrity (AES-256-GCM)**:  
    ផ្ទៀងផ្ទាត់ថា ក្បួន AES-256-GCM រកឃើញការលួចកែប្រែទិន្នន័យ Ciphertext សូម្បីតែ ១ Bit ហើយបដិសេធមិន Decrypt ឡើយ (Anti-Tampering)។
 2. **Database Port Protection (MySQL 3306)**:  
-   ស្កេន TCP Socket លើ Port 3306 ទៅកាន់ IP EC2 `3.16.212.72` ដើម្បីបញ្ជាក់ថា Database ត្រូវបាន Blocked/Filtered មិនឱ្យក្រៅ Internet ចូលបានឡើយ។
+   ស្កេន TCP Socket លើ Port 3306 ទៅកាន់ IP EC2 `18.140.114.212` ដើម្បីបញ្ជាក់ថា Database ត្រូវបាន Blocked/Filtered មិនឱ្យក្រៅ Internet ចូលបានឡើយ។
 3. **Public Services & WebRTC Availability**:  
    ផ្ទៀងផ្ទាត់ថា Port 80, 443, 3000, 5000, 3478 ដំណើរការរលូន។
 4. **Transport Layer Security (TLS/HTTPS)**:  
-   ផ្ទៀងផ្ទាត់សុពលភាពនៃការតភ្ជាប់តាម HTTPS លើ Domain ផ្ទាល់ (`https://3-16-212-72.sslip.io`)។
+   ផ្ទៀងផ្ទាត់សុពលភាពនៃការតភ្ជាប់តាម HTTPS លើ Domain ផ្ទាល់ (`https://18-140-114-212.sslip.io`)។
 5. **Password Resilience (Argon2id)**:  
    ផ្ទៀងផ្ទាត់ក្បួន Hashing លំដាប់កំពូល Argon2id ដែលប្រើប្រាស់ Memory រហូតដល់ **64 MB RAM** ការពារការ Brute-force តាម GPU។
 
