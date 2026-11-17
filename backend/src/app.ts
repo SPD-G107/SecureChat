@@ -15,6 +15,9 @@ import pushRoutes from './routes/push.routes.js';
 
 export const app = express();
 
+// Trust the first reverse proxy hop (Nginx) so req.ip and rate limiters use real client IPs
+app.set('trust proxy', 1);
+
 // Security HTTP headers
 app.use(helmet());
 app.use(
