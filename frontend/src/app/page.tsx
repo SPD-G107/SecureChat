@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Shield, Lock, KeyRound, ServerOff, ArrowRight, MessageSquare, LogOut } from 'lucide-react';
+import { Lock, KeyRound, ServerOff, ArrowRight, MessageSquare, LogOut } from 'lucide-react';
 import { ApiClient } from '@/lib/api-client';
 
 export default function HomePage() {
@@ -58,12 +58,6 @@ export default function HomePage() {
             alt="SecureChat Logo"
             className="w-20 h-20 rounded-full object-cover border border-emerald-500/40 shadow-lg"
           />
-        </div>
-
-        {/* Clean Badge */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-800/60 text-emerald-300 text-xs font-medium mb-5">
-          <Shield className="w-3.5 h-3.5 text-emerald-400" />
-          <span>University Capstone Project — Group 7</span>
         </div>
 
         {/* Clean, Readable Title */}
